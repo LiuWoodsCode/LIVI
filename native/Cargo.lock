@@ -3989,6 +3989,7 @@ version = "0.1.0"
 dependencies = [
  "glib",
  "glib-unix",
+ "gstreamer",
  "libc 1.0.0-alpha.5",
  "livi-audio",
  "livi-host-proto",

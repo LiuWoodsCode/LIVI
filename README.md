@@ -393,6 +393,9 @@ cargo xtask package-mac --arch x64    # Intel on Apple Silicon
 cargo xtask build-native
 ```
 
+On macOS, `out/bin/LIVI` can be launched directly. The native binaries include
+their macOS identity, and the helpers run in the background without Dock icons.
+
 `package-linux` needs [appimagetool](https://github.com/AppImage/appimagetool) on the `PATH`, or its path in `APPIMAGETOOL`, and `desktop-file-validate` (package `desktop-file-utils`).
 
 ## Debugging

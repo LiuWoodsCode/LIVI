@@ -4,7 +4,11 @@
 
 use std::fmt::Write;
 
+#[path = "../../build_support/macos.rs"]
+mod macos;
+
 fn main() {
+    macos::embed_info_plist("LIVI", "dev.f-io.livi", false);
     slint_build::compile("ui/app.slint").unwrap();
 
     let dir = std::path::Path::new(&std::env::var("CARGO_MANIFEST_DIR").unwrap()).join("ui/icons");

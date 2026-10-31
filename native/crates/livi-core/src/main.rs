@@ -226,6 +226,7 @@ async fn run() -> Result<Exit, String> {
     tokio::spawn(audio_devices::follow(
         core.hub.clone(),
         res.gstreamer.clone(),
+        res.gst_host.clone(),
     ));
     host_setup::prepare();
     let privileged = privileged::Privileged {

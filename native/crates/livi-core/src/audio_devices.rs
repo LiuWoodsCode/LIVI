@@ -15,6 +15,7 @@ use crate::devices;
 use crate::hub::Hub;
 use crate::resources::gst_env;
 
+#[cfg(not(target_os = "macos"))]
 const MONITOR: &str = "gst-device-monitor-1.0";
 const LIST_TIMEOUT: Duration = Duration::from_secs(4);
 const PAIRED_TIMEOUT: Duration = Duration::from_secs(2);
@@ -177,9 +178,18 @@ fn with_paired(devices: Vec<AudioDevice>, paired: &[Paired], kind: Kind) -> Vec<
     live.into_iter().chain(offline).collect()
 }
 
-fn monitor(gst: Option<&Path>) -> Command {
+fn monitor(gst: Option<&Path>, host: &Path) -> Command {
+    #[cfg(target_os = "macos")]
+    let mut cmd = {
+        let mut cmd = Command::new(host);
+        cmd.arg("--audio-devices");
+        cmd
+    };
+    #[cfg(not(target_os = "macos"))]
     let mut cmd =
         Command::new(gst.map_or_else(|| PathBuf::from(MONITOR), |r| r.join("bin").join(MONITOR)));
+    #[cfg(not(target_os = "macos"))]
+    let _ = host;
     if let Some(root) = gst {
         cmd.envs(gst_env(root));
     }
@@ -189,8 +199,8 @@ fn monitor(gst: Option<&Path>) -> Command {
     cmd
 }
 
-async fn list(gst: Option<&Path>, kind: Kind) -> Vec<AudioDevice> {
-    let out = monitor(gst).arg(kind.class()).output();
+async fn list(gst: Option<&Path>, host: &Path, kind: Kind) -> Vec<AudioDevice> {
+    let out = monitor(gst, host).arg(kind.class()).output();
     match tokio::time::timeout(LIST_TIMEOUT, out).await {
         Ok(Ok(out)) if out.status.success() => parse(&String::from_utf8_lossy(&out.stdout), kind),
         _ => Vec::new(),
@@ -226,10 +236,10 @@ async fn paired_audio() -> Vec<Paired> {
         .collect()
 }
 
-async fn refresh(hub: &Hub, gst: Option<&Path>) {
+async fn refresh(hub: &Hub, gst: Option<&Path>, host: &Path) {
     let paired = paired_audio().await;
-    let sinks = with_paired(list(gst, Kind::Sink).await, &paired, Kind::Sink);
-    let sources = with_paired(list(gst, Kind::Source).await, &paired, Kind::Source);
+    let sinks = with_paired(list(gst, host, Kind::Sink).await, &paired, Kind::Sink);
+    let sources = with_paired(list(gst, host, Kind::Source).await, &paired, Kind::Source);
     hub.update(|s| {
         s.system.audio_sinks = sinks;
         s.system.audio_sources = sources;
@@ -249,8 +259,8 @@ fn topology_changed(line: &str) -> bool {
     }
 }
 
-async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
-    let mut cmd = monitor(gst);
+async fn watch(hub: &Hub, gst: Option<&Path>, host: &Path) -> bool {
+    let mut cmd = monitor(gst, host);
     cmd.args(["-f", Kind::Sink.class(), Kind::Source.class()])
         .stdout(Stdio::piped());
     let Ok(mut child) = cmd.spawn() else {
@@ -267,7 +277,7 @@ async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
                 Ok(next) => next,
                 Err(_) => {
                     pending = false;
-                    refresh(hub, gst).await;
+                    refresh(hub, gst, host).await;
                     continue;
                 }
             }
@@ -280,17 +290,17 @@ async fn watch(hub: &Hub, gst: Option<&Path>) -> bool {
         }
     }
     if pending {
-        refresh(hub, gst).await;
+        refresh(hub, gst, host).await;
     }
     true
 }
 
-pub async fn follow(hub: Arc<Hub>, gst: Option<PathBuf>) {
-    refresh(&hub, gst.as_deref()).await;
-    while watch(&hub, gst.as_deref()).await {
+pub async fn follow(hub: Arc<Hub>, gst: Option<PathBuf>, host: PathBuf) {
+    refresh(&hub, gst.as_deref(), &host).await;
+    while watch(&hub, gst.as_deref(), &host).await {
         tokio::time::sleep(RESTART_DELAY).await;
     }
-    println!("[audio] {MONITOR} does not start, the device lists stay as they are");
+    println!("[audio] device monitoring does not start, the device lists stay as they are");
 }
 
 #[cfg(test)]
@@ -310,6 +320,38 @@ mod tests {
 
     fn ids(devices: &[AudioDevice]) -> Vec<&str> {
         devices.iter().map(|d| d.id.as_str()).collect()
+    }
+
+    #[test]
+    fn audio_monitor_uses_the_platform_helper() {
+        let cmd = monitor(Some(Path::new("/gst")), Path::new("/livi-gst-host"));
+        let cmd = cmd.as_std();
+        #[cfg(target_os = "macos")]
+        {
+            assert_eq!(cmd.get_program(), "/livi-gst-host");
+            assert_eq!(cmd.get_args().collect::<Vec<_>>(), ["--audio-devices"]);
+        }
+        #[cfg(not(target_os = "macos"))]
+        assert_eq!(cmd.get_program(), "/gst/bin/gst-device-monitor-1.0");
+        assert!(cmd.get_envs().any(|(k, v)| {
+            k == "GST_PLUGIN_PATH" && v == Some(std::ffi::OsStr::new("/gst/lib/gstreamer-1.0"))
+        }));
+    }
+
+    #[test]
+    fn the_background_helper_listing_preserves_mac_ids_and_defaults() {
+        let listing = "Device found:\n\tname : Speakers\n\tclass : Audio/Sink\n\
+            \tunique-id = \"Built In Speaker\"\n\tis-default = true\n\n\
+            Device found:\n\tname : USB Mic\n\tclass : Audio/Source\n\
+            \tunique-id = \"USB:1234\"\n\tis-default = false\n";
+        let sinks = parse(listing, Kind::Sink);
+        assert_eq!(ids(&sinks), ["Built In Speaker"]);
+        assert_eq!(sinks[0].name, "Speakers");
+        assert!(sinks[0].is_default);
+        let sources = parse(listing, Kind::Source);
+        assert_eq!(ids(&sources), ["USB:1234"]);
+        assert!(!sources[0].is_default);
+        assert!(topology_changed("Device changed:"));
     }
 
     #[test]
