@@ -8,7 +8,7 @@ use crate::vehicle::{Fuels, Plugs};
 
 #[derive(Debug, Clone)]
 pub struct Identity {
-    pub name: String,
+    pub name: String, // carName value in config
     pub ssid: String,
     pub bt_mac: [u8; 6],
     pub fuels: Fuels,
