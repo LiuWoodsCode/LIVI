@@ -79,6 +79,21 @@ component StepButton inherits Rectangle {
     }
 }
 
+// Keep pointer focus in sync with the state used by the global key handler.
+component FieldInput inherits TextInput {
+    in property <int> focus-index;
+
+    changed has-focus => {
+        if (self.has-focus) {
+            Focus.zone = FocusZone.main;
+            Focus.main-index = root.focus-index;
+            Focus.editing = true;
+        } else if (Focus.main(root.focus-index)) {
+            Focus.editing = false;
+        }
+    }
+}
+
 export component NumberBody inherits VerticalLayout {
     in property <int> base;
     property <bool> focused: Focus.main(root.base + 1);
@@ -151,7 +166,8 @@ export component NumberBody inherits VerticalLayout {
                         Focus.editing = true;
                     }
                 }
-                input := TextInput {
+                input := FieldInput {
+                    focus-index: root.base + 1;
                     visible: root.editing;
                     width: parent.width - 24px;
                     color: Theme.text;
@@ -174,6 +190,7 @@ export component NumberBody inherits VerticalLayout {
 }
 
 export component TextBody inherits VerticalLayout {
+    in property <int> base;
     in property <bool> focused;
     in property <bool> editing;
     in property <string> value;
@@ -187,7 +204,8 @@ export component TextBody inherits VerticalLayout {
         border-radius: 8px;
         border-width: input.has-focus || root.focused ? 2px : 1px;
         border-color: input.has-focus || root.focused ? Theme.primary : Theme.divider;
-        input := TextInput {
+        input := FieldInput {
+            focus-index: root.base;
             x: 14px;
             width: parent.width - 28px;
             text: root.value;
@@ -324,7 +342,8 @@ export component ColorBody inherits VerticalLayout {
             border-radius: 8px;
             border-width: root.hex-bad || hex-input.has-focus || Focus.main(root.base) ? 2px : 1px;
             border-color: root.hex-bad ? #f44336 : hex-input.has-focus || Focus.main(root.base) ? Theme.primary : Theme.divider;
-            hex-input := TextInput {
+            hex-input := FieldInput {
+                focus-index: root.base;
                 x: 12px;
                 width: parent.width - 24px;
                 text: root.hex;

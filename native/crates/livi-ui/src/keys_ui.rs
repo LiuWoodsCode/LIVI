@@ -524,3 +524,6 @@ pub fn wire(ui: &AppWindow, client: &Client) {
 pub fn text_done(ui: &AppWindow) {
     ui.global::<Focus>().set_editing(false);
 }
+
+#[cfg(test)]
+mod tests;

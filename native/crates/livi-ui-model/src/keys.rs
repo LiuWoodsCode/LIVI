@@ -105,7 +105,7 @@ pub fn decide(code: &str, ctx: Context, config: &Value) -> Outcome {
         Focused::Slider | Focused::Number | Focused::Text
     ) && in_main;
 
-    if code == or(b("cycleSession"), "KeyS") && !ctx.repeat && !text_entry {
+    if code == or(b("cycleSession"), "KeyS") && !ctx.repeat && !text_entry && !number_entry {
         return Outcome::CycleSession;
     }
 
@@ -334,6 +334,7 @@ mod tests {
         assert_eq!(decide("ArrowUp", c, &config()), Outcome::Adjust(1));
         assert_eq!(decide("ArrowDown", c, &config()), Outcome::Adjust(-1));
         assert_eq!(decide("Digit7", c, &config()), Outcome::Pass);
+        assert_eq!(decide("KeyS", c, &config()), Outcome::Pass);
         assert_eq!(decide("Backspace", c, &config()), Outcome::Pass);
         assert_eq!(decide("ArrowLeft", c, &config()), Outcome::Pass);
         assert_eq!(decide("Enter", c, &config()), Outcome::StopEditing);
