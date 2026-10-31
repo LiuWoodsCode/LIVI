@@ -24,7 +24,7 @@ pub(super) const VOLUME_TYPES: [(i64, i64, Option<&str>); 5] = [
     (NAV_VOLUME, 1, None),
     (CALL_VOLUME, 2, None),
     (SIRI_VOLUME, 3, None),
-    (MUSIC_VOLUME, 6, Some("Musik")),
+    (MUSIC_VOLUME, 6, Some("Music")), // todo: localize
 ];
 
 pub(super) fn audio() -> Accessory {
