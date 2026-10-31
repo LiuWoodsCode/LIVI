@@ -364,6 +364,15 @@ Fedora has no `rfkill` package, the command comes with `util-linux`. `libspa-0.2
 
 On macOS, building needs Rust and the GStreamer framework (runtime and devel pkg from gstreamer.freedesktop.org).
 
+On Apple Silicon, load the project build environment before building:
+
+```bash
+source scripts/env-macos.sh
+```
+
+This selects Homebrew's tools and pkg-config paths (including libepoxy), and the
+official GStreamer framework. Run it in each new shell before entering `native/`.
+
 ### Clone & Build
 
 ```bash

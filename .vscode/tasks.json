@@ -1,0 +1,27 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Build native",
+      "type": "shell",
+      "command": "cargo xtask build-native",
+      "options": {
+        "cwd": "${workspaceFolder}/native"
+      },
+      "osx": {
+        "command": "source \"${workspaceFolder}/scripts/env-macos.sh\" && cargo xtask build-native",
+        "options": {
+          "shell": {
+            "executable": "/bin/zsh",
+            "args": ["-c"]
+          }
+        }
+      },
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      },
+      "problemMatcher": ["$rustc"]
+    }
+  ]
+}
