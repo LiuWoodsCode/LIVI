@@ -12,6 +12,8 @@ use idevice::usbmuxd::{Connection, UsbmuxdAddr, UsbmuxdDevice};
 
 use crate::LOCKDOWN_SERVICE;
 
+mod io;
+
 const STEP_TIMEOUT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -123,9 +125,14 @@ async fn open_provider(
     if ssl {
         step(Stage::CarkitTls, channel.start_session(&pairing, false)).await?;
     }
-    channel.get_socket().ok_or_else(|| ProbeError {
+    let socket = channel.get_socket().ok_or_else(|| ProbeError {
         stage: Stage::Carkit,
         detail: "carkit stream unavailable after opening the service".into(),
+    })?;
+    Ok(if ssl {
+        Box::new(io::CarkitStream::new(socket))
+    } else {
+        socket
     })
 }
 

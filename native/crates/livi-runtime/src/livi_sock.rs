@@ -187,12 +187,13 @@ where
             Ok(())
         }
         "certificate" => {
-            let json = match (auth.read_certificate().await, auth.protocol_major().await) {
-                (Ok(cert), Ok(major)) => format!(
-                    "{{\"ok\":true,\"data\":\"{}\",\"protocolMajor\":{}}}",
-                    STANDARD.encode(&cert),
-                    major
-                ),
+            let json = match (auth.authentication_certificate().await, auth.protocol_major().await) {
+                (Ok(cert), Ok(major)) => serde_json::json!({
+                    "ok": true,
+                    "data": STANDARD.encode(&cert.data),
+                    "protocolMajor": major,
+                    "intermediateCertificate": cert.intermediate.as_ref().map(|c| STANDARD.encode(c)),
+                }).to_string(),
                 (Err(e), _) | (_, Err(e)) => err_json(&format!("MFi: {e}")),
             };
             reply(&mut stream, &json).await

@@ -5,11 +5,17 @@
 use std::future::Future;
 
 use crate::crypto::{X25519, aes_ctr128, sha1, sha256};
+use crate::opack::{self, Value};
 
 pub trait MfiSigner {
     fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
     fn sign(&self, digest: &[u8]) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
     fn protocol_major(&self) -> impl Future<Output = Result<u8, String>> + Send;
+    fn intermediate_certificate(
+        &self,
+    ) -> impl Future<Output = Result<Option<Vec<u8>>, String>> + Send {
+        async { Ok(None) }
+    }
 }
 
 const VERSION: u8 = 0x01;
@@ -38,16 +44,22 @@ pub async fn handle(body: &[u8], signer: &impl MfiSigner) -> Result<Option<Vec<u
         .expect("20 bytes");
 
     let cert = signer.certificate().await?;
-    let digest = match signer.protocol_major().await? {
-        2 => sha1(&[&ours, &peer]).to_vec(),
-        _ => sha256(&[&ours, &peer]).to_vec(),
+    let intermediate = signer.intermediate_certificate().await?;
+    let challenge = if intermediate.is_some() {
+        // BAA's Security.framework signer hashes the message itself.
+        [&ours[..], &peer[..]].concat()
+    } else {
+        match signer.protocol_major().await? {
+            2 => sha1(&[&ours, &peer]).to_vec(),
+            _ => sha256(&[&ours, &peer]).to_vec(),
+        }
     };
-    let sig = aes_ctr128(&aes_key, &aes_iv, &signer.sign(&digest).await?);
+    let sig = aes_ctr128(&aes_key, &aes_iv, &signer.sign(&challenge).await?);
     println!(
-        "[cp] auth-setup signed (cert {} B, sig {} B, digest {} B)",
+        "[cp] auth-setup signed (cert {} B, sig {} B, challenge {} B)",
         cert.len(),
         sig.len(),
-        digest.len()
+        challenge.len()
     );
 
     let mut out = ours.to_vec();
@@ -55,6 +67,11 @@ pub async fn handle(body: &[u8], signer: &impl MfiSigner) -> Result<Option<Vec<u
     out.extend_from_slice(&cert);
     out.extend_from_slice(&(sig.len() as u32).to_be_bytes());
     out.extend_from_slice(&sig);
+    if let Some(intermediate) = intermediate {
+        let extra = opack::encode(&opack::dict([("baIC", Value::Data(intermediate))]));
+        out.extend_from_slice(&(extra.len() as u32).to_be_bytes());
+        out.extend_from_slice(&extra);
+    }
     Ok(Some(out))
 }
 
@@ -131,6 +148,56 @@ mod tests {
         let (_, body) = request();
         block_on(handle(&body, &chip)).unwrap().unwrap();
         assert_eq!(chip.digests.lock().unwrap()[0].len(), 20);
+    }
+
+    struct Baa(Mutex<Vec<u8>>);
+
+    impl MfiSigner for Baa {
+        async fn certificate(&self) -> Result<Vec<u8>, String> {
+            Ok(b"LEAF".to_vec())
+        }
+        async fn intermediate_certificate(&self) -> Result<Option<Vec<u8>>, String> {
+            Ok(Some(b"INTERMEDIATE".to_vec()))
+        }
+        async fn protocol_major(&self) -> Result<u8, String> {
+            panic!("BAA does not select a hardware digest")
+        }
+        async fn sign(&self, message: &[u8]) -> Result<Vec<u8>, String> {
+            *self.0.lock().unwrap() = message.to_vec();
+            Ok(vec![0x30; 71]) // variable-length X9.62 signature
+        }
+    }
+
+    #[test]
+    fn baa_signs_the_raw_keys_and_appends_the_intermediate_as_opack() {
+        let signer = Baa(Mutex::new(Vec::new()));
+        let (phone, body) = request();
+        let phone_public = phone.public;
+        let out = block_on(handle(&body, &signer)).unwrap().unwrap();
+        let ours: [u8; 32] = out[..32].try_into().unwrap();
+        assert_eq!(
+            *signer.0.lock().unwrap(),
+            [&ours[..], &phone_public[..]].concat()
+        );
+        assert_eq!(&out[32..36], &4u32.to_be_bytes());
+        assert_eq!(&out[36..40], b"LEAF");
+        assert_eq!(&out[40..44], &71u32.to_be_bytes());
+        let shared = phone.shared(&ours).unwrap();
+        let key = sha1(&[b"AES-KEY", &shared])[..16].try_into().unwrap();
+        let iv = sha1(&[b"AES-IV", &shared])[..16].try_into().unwrap();
+        assert_eq!(aes_ctr128(&key, &iv, &out[44..115]), vec![0x30; 71]);
+        assert_eq!(
+            u32::from_be_bytes(out[115..119].try_into().unwrap()) as usize,
+            out.len() - 119
+        );
+        assert_eq!(
+            opack::decode(&out[119..])
+                .unwrap()
+                .get("baIC")
+                .unwrap()
+                .as_data(),
+            Some(&b"INTERMEDIATE"[..])
+        );
     }
 
     #[test]

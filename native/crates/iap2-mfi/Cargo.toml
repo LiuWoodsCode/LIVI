@@ -14,3 +14,6 @@ rsa = { version = "0.9.10", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc.workspace = true
+
+[build-dependencies]
+cc = "1"

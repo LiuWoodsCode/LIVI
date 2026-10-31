@@ -15,7 +15,7 @@ use iap2_link::{
 };
 
 use crate::file_transfer::{FileTransferReceiver, FtOutput};
-use crate::framing::FrameReader;
+use crate::framing::{FrameReader, frame_msg_id};
 use crate::{ChannelError, ControlChannel};
 
 pub struct LinkChannel {
@@ -25,10 +25,26 @@ pub struct LinkChannel {
 
 impl ControlChannel for LinkChannel {
     async fn send(&mut self, frame: Vec<u8>) -> Result<(), ChannelError> {
+        trace_control("send", &frame);
         self.out_tx.send(frame).map_err(|_| ChannelError::Closed)
     }
     async fn recv(&mut self) -> Option<Vec<u8>> {
-        self.in_rx.recv().await
+        let frame = self.in_rx.recv().await?;
+        trace_control("receive", &frame);
+        Some(frame)
+    }
+}
+
+fn trace_control(direction: &str, frame: &[u8]) {
+    static ENABLED: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    if *ENABLED.get_or_init(|| {
+        ["DEBUG", "LIVI_CP_DEBUG"]
+            .iter()
+            .any(|key| std::env::var(key).is_ok_and(|v| v == "1"))
+    }) {
+        if let Some(id) = frame_msg_id(frame) {
+            println!("[link] control {direction} 0x{id:04X} ({} B)", frame.len());
+        }
     }
 }
 

@@ -25,6 +25,7 @@ const RESUBSCRIBE: Duration = Duration::from_secs(1);
 pub struct HelperSock {
     sock: LineSock,
     protocol_major: Arc<Mutex<Option<u8>>>,
+    intermediate_certificate: Arc<Mutex<Option<Vec<u8>>>>,
     targets: Arc<tokio::sync::Mutex<()>>,
 }
 
@@ -45,6 +46,7 @@ impl HelperSock {
         Self {
             sock: LineSock::new(path, "cp-bt sock"),
             protocol_major: Arc::new(Mutex::new(None)),
+            intermediate_certificate: Arc::new(Mutex::new(None)),
             targets: Arc::new(tokio::sync::Mutex::new(())),
         }
     }
@@ -67,7 +69,31 @@ impl HelperSock {
     }
 
     pub async fn certificate(&self) -> Result<Vec<u8>, String> {
-        let res = self.request_ok("certificate").await?;
+        // DeviceIdentity may need an online certificate issuance (60 seconds).
+        let res = self
+            .sock
+            .request("certificate", Duration::from_secs(75))
+            .await?;
+        if res.get("ok") != Some(&Value::Bool(true)) {
+            return Err(res
+                .get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("refused")
+                .into());
+        }
+        let intermediate = res
+            .get("intermediateCertificate")
+            .and_then(Value::as_str)
+            .map(|value| {
+                STANDARD
+                    .decode(value)
+                    .map_err(|e| format!("cp-bt sock bad intermediate certificate: {e}"))
+            })
+            .transpose()?;
+        *self
+            .intermediate_certificate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = intermediate;
         if let Some(major) = res.get("protocolMajor").and_then(Value::as_u64) {
             *self
                 .protocol_major
@@ -168,6 +194,14 @@ impl HelperSock {
 }
 
 impl MfiSigner for HelperSock {
+    async fn intermediate_certificate(&self) -> Result<Option<Vec<u8>>, String> {
+        Ok(self
+            .intermediate_certificate
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone())
+    }
+
     fn certificate(&self) -> impl Future<Output = Result<Vec<u8>, String>> + Send {
         HelperSock::certificate(self)
     }
@@ -293,6 +327,31 @@ pub(crate) mod tests {
                 .unwrap_err()
                 .contains("cp-bt sock error")
         );
+    }
+
+    #[tokio::test]
+    async fn baa_metadata_is_cleared_when_hardware_takes_over() {
+        let dir = Dir::new();
+        let path = dir.0.join("baa.sock");
+        let replies = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        serve(&path, move |_| {
+            let reply = if replies.fetch_add(1, std::sync::atomic::Ordering::Relaxed) == 0 {
+                r#"{"ok":true,"data":"AQID","protocolMajor":0,"intermediateCertificate":"BAU="}"#
+            } else {
+                r#"{"ok":true,"data":"AQID","protocolMajor":3}"#
+            };
+            Some(format!("{reply}\n"))
+        });
+        let helper = HelperSock::new(path);
+        helper.certificate().await.unwrap();
+        assert_eq!(helper.protocol_major().await.unwrap(), 0);
+        assert_eq!(
+            helper.intermediate_certificate().await.unwrap(),
+            Some(vec![4, 5])
+        );
+        helper.certificate().await.unwrap();
+        assert_eq!(helper.protocol_major().await.unwrap(), 3);
+        assert_eq!(helper.intermediate_certificate().await.unwrap(), None);
     }
 
     #[tokio::test]

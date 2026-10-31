@@ -60,7 +60,7 @@ fn relink(file: &Path, rpath: &str) -> Result<(), String> {
     exec(cmd.args(["-add_rpath", rpath]).arg(file))
 }
 
-fn sign(file: &Path, entitlements: Option<&Path>) -> Result<(), String> {
+fn sign(file: &Path, entitlements: Option<&Path>, identifier: Option<&str>) -> Result<(), String> {
     let mut cmd = Command::new("codesign");
     cmd.args([
         "--force",
@@ -72,6 +72,9 @@ fn sign(file: &Path, entitlements: Option<&Path>) -> Result<(), String> {
     ]);
     if let Some(e) = entitlements {
         cmd.arg("--entitlements").arg(e);
+    }
+    if let Some(identifier) = identifier {
+        cmd.arg("--identifier").arg(identifier);
     }
     exec(cmd.arg(file))
 }
@@ -171,6 +174,10 @@ pub fn run(arch: Arch) -> Result<(), String> {
 
     let inherit = root.join("assets/mac/entitlements.mac.inherit.plist");
     let main = root.join("assets/mac/entitlements.mac.plist");
+    // Private BAA entitlements are opt-in: stock macOS rejects ad-hoc
+    // executables carrying these entitlements at launch.
+    let baa = (std::env::var("LIVI_MAC_BAA").as_deref() == Ok("1"))
+        .then(|| root.join("assets/mac/entitlements.mac.baa.plist"));
     let mut nested = Vec::new();
     files_under(&res, &mut nested)?;
     let nested: Vec<PathBuf> = nested.into_iter().filter(|f| mach_o(f)).collect();
@@ -179,12 +186,18 @@ pub fn run(arch: Arch) -> Result<(), String> {
         exec && !f.extension().is_some_and(|e| e == "dylib" || e == "so")
     };
     for f in nested.iter().filter(|f| !executable(f)) {
-        sign(f, None)?;
+        sign(f, None, None)?;
     }
     for f in nested.iter().filter(|f| executable(f)) {
-        sign(f, Some(&inherit))?;
+        if f == &res.join("driver/livi-helperd")
+            && let Some(baa) = &baa
+        {
+            sign(f, Some(baa), Some("dev.f-io.livi.helperd"))?;
+        } else {
+            sign(f, Some(&inherit), None)?;
+        }
     }
-    sign(&app, Some(&main))?;
+    sign(&app, Some(&main), None)?;
     exec(
         Command::new("codesign")
             .args(["--verify", "--deep", "--strict", "--verbose=2"])

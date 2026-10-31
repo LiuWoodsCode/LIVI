@@ -51,6 +51,13 @@ fn vectors_roundtrip() {
             "AuthenticationCertificate" => {
                 let m = roundtrip::<AuthenticationCertificate>(&name, &frame);
                 assert_eq!(m.certificate, vec![0x01, 0x02, 0xff]);
+                if name.ends_with("#baa") {
+                    assert_eq!(m.authentication_type, Some(1));
+                    assert_eq!(m.intermediate_certificate, Some(vec![3, 4]));
+                } else {
+                    assert_eq!(m.authentication_type, None);
+                    assert_eq!(m.intermediate_certificate, None);
+                }
             }
             "RequestAuthenticationChallengeResponse" => {
                 let m = roundtrip::<RequestAuthenticationChallengeResponse>(&name, &frame);
@@ -225,5 +232,5 @@ fn vectors_roundtrip() {
         }
         seen += 1;
     }
-    assert_eq!(seen, 33, "vector count changed, update the mapping");
+    assert_eq!(seen, 34, "vector count changed, update the mapping");
 }

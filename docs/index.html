@@ -306,14 +306,22 @@
         <li><strong>Over the network</strong>: a <a href="https://github.com/f-io/LIVI/blob/main/LIVI-LINK.md">LIVI Link</a></li>
       </ul>
       <p>
-        Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is
-        the only one.
+        Both routes work on Linux. On macOS, LIVI also has an experimental <strong>Basic Accessory
+        Authentication (BAA)</strong> through the Mac's DeviceIdentity service, using a device-bound key
+        and Apple-issued certificates. It requires a helper signed with private entitlements and
+        macOS configured to permit them (tested with SIP and AMFI disabled). Stock macOS rejects an
+        ordinary LIVI build's certificate request. See
+        <a href="https://github.com/f-io/LIVI/blob/main/native/crates/iap2-mfi/README.md">BAA setup and validation</a>.
       </p>
       <p>
-        LIVI does not support Apple's Basic Accessory Authentication on macOS, but may in the future.
+        Imported MFi files take priority on a Mac, followed by a connected LIVI Link, then BAA when
+        the helper has the required entitlements. BAA needs neither a separate coprocessor nor the
+        CarPlay Simulator; initial certificate issuance may require internet access.
+        BAA covers iAP2 and AirPlay authentication without advertising hardware MFi4 mutual
+        authentication. If macOS cannot issue the identity, LIVI reports the service error.
       </p>
       <p>
-        Without one of these, native CarPlay is unavailable. All Android Auto paths work regardless.
+        Without a usable authentication source, native CarPlay is unavailable. All Android Auto paths work regardless.
       </p>
 
       <h2>Build Environment</h2>

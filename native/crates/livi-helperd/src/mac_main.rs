@@ -7,7 +7,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use iap2_link::LinkConfig;
-use iap2_mfi::{NcmCoprocessor, NoCoprocessor};
+use iap2_mfi::{BasicAccessoryAuth, NcmCoprocessor, NoCoprocessor};
 use livi_bt_host::sdp::Service;
 use livi_runtime::bonjour::Bonjour;
 use livi_runtime::bringup::{AskOnAir, CpConfig, run_accessory};
@@ -217,6 +217,18 @@ fn over_dongle() -> bool {
     env_s("LIVI_BT_ADAPTER", "") == livi_link_host::link::CHOICE
 }
 
+fn platform_auth() -> Box<dyn iap2_mfi::AuthCoprocessor + Send> {
+    if platform_auth_ready() {
+        Box::new(BasicAccessoryAuth::default())
+    } else {
+        Box::new(NoCoprocessor)
+    }
+}
+
+fn platform_auth_ready() -> bool {
+    BasicAccessoryAuth::available() && BasicAccessoryAuth::has_required_entitlements()
+}
+
 fn start_carplay_seam(
     link: Arc<LinkPresence>,
     state: Arc<HelperState>,
@@ -226,9 +238,10 @@ fn start_carplay_seam(
     let (cp, identity) = cp_config();
     let files = crate::mfi_files::open();
     let own_files = files.is_some();
+    let local_auth = own_files || platform_auth_ready();
     let auth = match files {
         Some(files) => SharedCoprocessor::new(Box::new(files)),
-        None => SharedCoprocessor::new(Box::new(NoCoprocessor)),
+        None => SharedCoprocessor::new(platform_auth()),
     };
     let bcast = Broadcaster::default();
 
@@ -248,7 +261,7 @@ fn start_carplay_seam(
         },
         move || {
             if !own_files {
-                down_auth.replace(Box::new(NoCoprocessor));
+                down_auth.replace(platform_auth());
             }
             gone.end();
             println!("[helperd] the dongle went");
@@ -299,13 +312,22 @@ fn start_carplay_seam(
         },
         bcast.clone(),
         state.clone(),
-        if own_files {
+        if local_auth {
             LinkPresence::always()
         } else {
             link.clone()
         },
     ));
-    println!("[helperd] wired CarPlay watcher started (system usbmuxd), waiting for the LIVI Link");
+    println!("[helperd] wired CarPlay watcher started (system usbmuxd)");
+    if local_auth && !own_files {
+        println!(
+            "[helperd] macOS Basic Accessory Authentication available (LIVI Link takes priority when connected)"
+        );
+    } else if !own_files && BasicAccessoryAuth::available() {
+        println!(
+            "[helperd] macOS BAA requires an entitled helper; using the LIVI Link for authentication (see native/crates/iap2-mfi/README.md)"
+        );
+    }
     if dongle_ap {
         tokio::spawn(crate::link::relay_stations(bcast.clone()));
     }

@@ -33,3 +33,6 @@ openssl = { version = "0.10.81", features = ["vendored"] }
 
 [dev-dependencies]
 tokio = { workspace = true, features = ["rt-multi-thread", "macros", "net", "io-util", "sync", "time", "test-util"] }
+
+[target.'cfg(target_os = "macos")'.dev-dependencies]
+iap2-mfi.workspace = true

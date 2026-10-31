@@ -26,6 +26,19 @@ impl SharedCoprocessor {
 }
 
 impl AsyncAuth for SharedCoprocessor {
+    async fn authentication_certificate(&mut self) -> Result<iap2_mfi::AuthCertificate, String> {
+        let inner = self.inner.clone();
+        tokio::task::spawn_blocking(move || {
+            inner
+                .lock()
+                .unwrap()
+                .authentication_certificate()
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .map_err(|e| e.to_string())?
+    }
+
     async fn read_certificate(&mut self) -> Result<Vec<u8>, String> {
         let inner = self.inner.clone();
         tokio::task::spawn_blocking(move || {

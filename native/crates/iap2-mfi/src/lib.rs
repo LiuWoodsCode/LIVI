@@ -31,6 +31,7 @@ pub enum MfiError {
     NoChip { probed: Vec<u16> },
     Io(String),
     File(String),
+    Platform(String),
 }
 
 impl core::fmt::Display for MfiError {
@@ -52,6 +53,7 @@ impl core::fmt::Display for MfiError {
             }
             MfiError::Io(e) => write!(f, "i2c io: {e}"),
             MfiError::File(e) => write!(f, "mfi files: {e}"),
+            MfiError::Platform(e) => write!(f, "macOS accessory authentication: {e}"),
         }
     }
 }
@@ -62,6 +64,20 @@ pub trait AuthCoprocessor {
     fn protocol_major(&mut self) -> Result<u8, MfiError>;
     fn read_certificate(&mut self) -> Result<Vec<u8>, MfiError>;
     fn generate_challenge_response(&mut self, challenge: &[u8]) -> Result<Vec<u8>, MfiError>;
+
+    fn authentication_certificate(&mut self) -> Result<AuthCertificate, MfiError> {
+        Ok(AuthCertificate {
+            data: self.read_certificate()?,
+            intermediate: None,
+        })
+    }
+}
+
+/// BAA sends two DER certificates; hardware MFi sends a single PKCS#7 blob.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AuthCertificate {
+    pub data: Vec<u8>,
+    pub intermediate: Option<Vec<u8>>,
 }
 
 pub struct NoCoprocessor;
@@ -88,6 +104,11 @@ pub const AUTH_TIMEOUT: Duration = Duration::from_secs(3);
 mod linux;
 #[cfg(target_os = "linux")]
 pub use linux::I2cCoprocessor;
+
+#[cfg(target_os = "macos")]
+mod macos;
+#[cfg(target_os = "macos")]
+pub use macos::BasicAccessoryAuth;
 
 pub mod ncm;
 pub use ncm::NcmCoprocessor;

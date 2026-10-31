@@ -39,6 +39,17 @@ pub trait AsyncAuth {
     fn read_certificate(&mut self) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
     fn sign(&mut self, challenge: Vec<u8>) -> impl Future<Output = Result<Vec<u8>, String>> + Send;
     fn protocol_major(&mut self) -> impl Future<Output = Result<u8, String>> + Send;
+    fn authentication_certificate(
+        &mut self,
+    ) -> impl Future<Output = Result<iap2_mfi::AuthCertificate, String>> + Send {
+        let certificate = self.read_certificate();
+        async move {
+            Ok(iap2_mfi::AuthCertificate {
+                data: certificate.await?,
+                intermediate: None,
+            })
+        }
+    }
 }
 
 #[derive(Debug)]

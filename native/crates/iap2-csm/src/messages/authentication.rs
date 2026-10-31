@@ -11,6 +11,8 @@ csm_message! {
 csm_message! {
     pub struct AuthenticationCertificate = 0xAA01 {
         0 => certificate: [bytes],
+        1 => authentication_type: [opt u8],
+        2 => intermediate_certificate: [opt bytes],
     }
 }
 

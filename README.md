@@ -53,9 +53,9 @@ CarPlay requires the accessory to authenticate against the phone. The usual way 
 - **On the board**: a coprocessor wired to the I²C bus
 - **Over the network**: a [LIVI Link](LIVI-LINK.md)
 
-Both routes work on Linux. A Mac has no I²C bus to put a coprocessor on, so there the LIVI Link is the only one.
+Both routes work on Linux. On macOS, LIVI also has an experimental **Basic Accessory Authentication (BAA)** backend through the Mac's DeviceIdentity service, using a device-bound key and Apple-issued certificates. This requires a helper signed with private entitlements and a macOS configuration that permits them (tested with SIP and AMFI disabled). Stock macOS rejects an ordinary LIVI build's certificate request. See [BAA setup and validation](native/crates/iap2-mfi/README.md).
 
-LIVI does not support Apple's Basic Accessory Authentication on MacOS, but may in the future.
+On a Mac, imported MFi files take priority, followed by a connected LIVI Link, then BAA when the helper has the required entitlements. BAA supports the iAP2 and AirPlay authentication handshakes and does not advertise hardware MFi4 mutual authentication. It needs neither a separate coprocessor nor the CarPlay Simulator. Initial certificate issuance may require internet access.
 
 For a chip on the board, configuration (`config.json`):
 
@@ -64,7 +64,7 @@ For a chip on the board, configuration (`config.json`):
 | `carPlayMfiI2cBus`    | `2`     | I²C bus number the coprocessor is on |
 | `carPlayMfiPowerGpio` | `21`    | GPIO that powers the coprocessor     |
 
-Without one of these, native CarPlay is unavailable. All Android Auto paths work regardless.
+Without a usable authentication source, native CarPlay is unavailable. All Android Auto paths work regardless.
 
 ## Wireless
 

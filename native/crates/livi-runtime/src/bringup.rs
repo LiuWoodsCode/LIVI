@@ -232,19 +232,40 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
     ch: &mut C,
     auth: &mut A,
 ) -> Result<(), BringupError> {
-    let cert = auth.read_certificate().await.map_err(BringupError::Auth)?;
+    println!("[cp] preparing accessory authentication certificate");
+    let cert = auth
+        .authentication_certificate()
+        .await
+        .map_err(BringupError::Auth)?;
+    println!(
+        "[cp] authentication certificate ready ({} B, {}), waiting for the phone",
+        cert.data.len(),
+        if cert.intermediate.is_some() {
+            "BAA"
+        } else {
+            "MFi"
+        }
+    );
     loop {
         let frame = recv(ch).await?;
+        println!(
+            "[cp] authentication received {:?} ({} B)",
+            frame_msg_id(&frame).map(|id| format!("0x{id:04X}")),
+            frame.len()
+        );
         match frame_msg_id(&frame) {
             Some(0xAA00) => {
                 ch.send(
                     AuthenticationCertificate {
-                        certificate: cert.clone(),
+                        certificate: cert.data.clone(),
+                        authentication_type: cert.intermediate.as_ref().map(|_| 1),
+                        intermediate_certificate: cert.intermediate.clone(),
                     }
                     .encode(),
                 )
                 .await
                 .map_err(|_| BringupError::Channel)?;
+                println!("[cp] sent authentication certificate");
             }
             Some(0xAA02) => {
                 let req = RequestAuthenticationChallengeResponse::decode(&frame)
@@ -253,6 +274,7 @@ async fn run_auth<C: ControlChannel, A: AsyncAuth>(
                 ch.send(AuthenticationResponse { response: sig }.encode())
                     .await
                     .map_err(|_| BringupError::Channel)?;
+                println!("[cp] sent authentication challenge response");
             }
             Some(0xAA05) => return Ok(()),
             Some(0xAA04) => {
@@ -683,6 +705,13 @@ async fn send_status<C: ControlChannel>(ch: &mut C, status: &VehicleStatus, fuel
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_hardware_mfi3_offers_mutual_authentication() {
+        assert_eq!(mutual_authentication(0), None); // macOS BAA
+        assert_eq!(mutual_authentication(2), None);
+        assert_eq!(mutual_authentication(3), Some(true));
+    }
 
     fn ap(ssid: &str, channel: u32) -> OnAir {
         OnAir {

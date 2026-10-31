@@ -105,6 +105,76 @@ fn cp_config() -> CpConfig {
     }
 }
 
+struct BaaAuth;
+
+impl AsyncAuth for BaaAuth {
+    async fn read_certificate(&mut self) -> Result<Vec<u8>, String> {
+        Ok(b"LEAF".to_vec())
+    }
+    async fn authentication_certificate(&mut self) -> Result<iap2_mfi::AuthCertificate, String> {
+        Ok(iap2_mfi::AuthCertificate {
+            data: b"LEAF".to_vec(),
+            intermediate: Some(b"INTERMEDIATE".to_vec()),
+        })
+    }
+    async fn sign(&mut self, challenge: Vec<u8>) -> Result<Vec<u8>, String> {
+        assert_eq!(challenge, vec![0xa5; 32]);
+        Ok(vec![0x30; 71])
+    }
+    async fn protocol_major(&mut self) -> Result<u8, String> {
+        Ok(0)
+    }
+}
+
+#[tokio::test]
+async fn baa_identifies_its_certificate_type_and_signs_the_phone_challenge() {
+    let (accessory, mut phone) = pair();
+    let (tx, mut events) = mpsc::channel(32);
+    let task = tokio::spawn(run_accessory(
+        accessory,
+        BaaAuth,
+        identity(),
+        cp_config(),
+        tx,
+        VehicleFeed::quiet(),
+    ));
+    phone.send(StartIdentification {}.encode()).await.unwrap();
+    phone.expect(0x1D01).await;
+    phone
+        .send(IdentificationAccepted {}.encode())
+        .await
+        .unwrap();
+    assert_eq!(events.recv().await, Some(BringupEvent::Identified));
+    phone
+        .send(RequestAuthenticationCertificate {}.encode())
+        .await
+        .unwrap();
+    let cert = AuthenticationCertificate::decode(&phone.expect(0xAA01).await).unwrap();
+    assert_eq!(cert.certificate, b"LEAF");
+    assert_eq!(cert.authentication_type, Some(1));
+    assert_eq!(
+        cert.intermediate_certificate.as_deref(),
+        Some(&b"INTERMEDIATE"[..])
+    );
+    phone
+        .send(
+            RequestAuthenticationChallengeResponse {
+                challenge: vec![0xa5; 32],
+            }
+            .encode(),
+        )
+        .await
+        .unwrap();
+    let response = AuthenticationResponse::decode(&phone.expect(0xAA03).await).unwrap();
+    assert_eq!(response.response, vec![0x30; 71]);
+    phone
+        .send(AuthenticationSucceeded {}.encode())
+        .await
+        .unwrap();
+    assert_eq!(events.recv().await, Some(BringupEvent::Authenticated));
+    task.abort();
+}
+
 #[tokio::test]
 async fn full_bringup_sequence() {
     let (accessory, mut phone) = pair();
