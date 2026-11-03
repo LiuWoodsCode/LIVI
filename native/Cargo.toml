@@ -5,9 +5,10 @@ exclude = ["vendor"]
 
 [patch.crates-io]
 femtovg = { path = "vendor/femtovg" }
+i-slint-backend-android-activity = { path = "vendor/i-slint-backend-android-activity" }
 
 [workspace.package]
-version = "10.2.0"
+version = "10.3.0"
 edition = "2024"
 description = "LIVI - Linux In-Vehicle Infotainment"
 homepage = "https://f-io.dev"
@@ -17,7 +18,7 @@ license = "GPL-3.0-or-later"
 [workspace.dependencies]
 # Every crate takes libc from here, so all of them follow the 1.0 API.
 libc = "1.0.0-alpha.5"
-aes = "0.9.3"
+aes = "0.9.4"
 base64 = "0.23.1"
 flate2 = "1.1.10"
 futures-util = "0.3.34"
@@ -27,6 +28,7 @@ gstreamer = "0.25.4"
 gstreamer-app = "0.25.2"
 lzokay-native = "0.1.0"
 nusb = "0.2.9"
+nusb-android = { package = "nusb", git = "https://github.com/f-io/nusb", rev = "10895e1a7c762498324cb1c36a4b67cf60083235" }
 prost = "0.14.4"
 serde = "1.0.229"
 serde_json = "1.0.154"
@@ -34,7 +36,7 @@ sha2 = "0.11.1"
 socket2 = "0.6.5"
 tokio = "1.54.1"
 uuid = "1.29.0"
-zbus = { version = "6.1.0", default-features = false }
+zbus = { version = "6.2.1", default-features = false }
 
 iap2-csm = { path = "crates/iap2-csm" }
 iap2-link = { path = "crates/iap2-link" }
@@ -46,14 +48,18 @@ livi-aa = { path = "crates/livi-aa" }
 livi-aa-proto = { path = "crates/livi-aa-proto" }
 livi-aa-stack = { path = "crates/livi-aa-stack" }
 livi-accessoryd = { path = "crates/livi-accessoryd" }
+livi-aaudio = { path = "crates/livi-aaudio" }
 livi-audio = { path = "crates/livi-audio" }
 livi-bt-host = { path = "crates/livi-bt-host" }
 livi-btd = { path = "crates/livi-btd" }
+livi-core = { path = "crates/livi-core" }
 livi-core-client = { path = "crates/livi-core-client" }
 livi-core-proto = { path = "crates/livi-core-proto" }
 livi-cp = { path = "crates/livi-cp" }
 livi-crypto = { path = "crates/livi-crypto" }
 livi-dab = { path = "crates/livi-dab" }
+livi-gst-host = { path = "crates/livi-gst-host" }
+livi-helper = { path = "crates/livi-helper" }
 livi-hfp = { path = "crates/livi-hfp" }
 livi-host-proto = { path = "crates/livi-host-proto" }
 livi-link-host = { path = "crates/livi-link-host" }
@@ -66,6 +72,7 @@ livi-runtime = { path = "crates/livi-runtime" }
 livi-screen-stream = { path = "crates/livi-screen-stream" }
 livi-session-io = { path = "crates/livi-session-io" }
 livi-i18n = { path = "crates/livi-i18n" }
+livi-ui = { path = "crates/livi-ui" }
 livi-ui-model = { path = "crates/livi-ui-model" }
 livi-video = { path = "crates/livi-video" }
 livi-video-player = { path = "crates/livi-video-player" }

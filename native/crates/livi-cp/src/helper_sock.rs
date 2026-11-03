@@ -17,7 +17,6 @@ use tokio::sync::mpsc;
 
 use crate::auth_setup::MfiSigner;
 
-pub const SOCK_PATH: &str = "/tmp/cp-bt.sock";
 const TIMEOUT: Duration = Duration::from_secs(8);
 const RESUBSCRIBE: Duration = Duration::from_secs(1);
 
@@ -27,12 +26,6 @@ pub struct HelperSock {
     protocol_major: Arc<Mutex<Option<u8>>>,
     intermediate_certificate: Arc<Mutex<Option<Vec<u8>>>>,
     targets: Arc<tokio::sync::Mutex<()>>,
-}
-
-impl Default for HelperSock {
-    fn default() -> Self {
-        Self::new(SOCK_PATH)
-    }
 }
 
 fn data_of(res: &Value) -> Result<Vec<u8>, String> {

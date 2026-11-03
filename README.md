@@ -4,9 +4,9 @@
 
 # LIVI – Linux In-Vehicle Infotainment
 
-LIVI is an open-source **Apple CarPlay and Android Auto head unit**.
+LIVI is an open-source Apple CarPlay and Android Auto head unit built in Rust with a Slint UI.
 
-It is a standalone cross-platform head unit with a native, zero-copy GStreamer video pipeline and hardware-accelerated decoding across Linux (from x86_64 and arm64 desktops to embedded boards like the Raspberry Pi) and macOS, with low-latency audio, multitouch + D-Pad navigation, and support for very small embedded/OEM displays.
+It runs on Linux desktops and embedded boards as well as on macOS and Android (experimental). A native zero-copy GStreamer pipeline handles hardware-decoded video and low-latency audio. Multitouch and D-Pad navigation are built in, and it works even on very small embedded and OEM displays.
 
 ## Project Status
 
@@ -18,8 +18,8 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 ## Native Connectivity
 
-- **Apple CarPlay** (wired & wireless) on Linux and Mac, requires [MFi Authentication](#mfi-authentication)
-- **Android Auto** (wired & wireless) on Linux and Mac, wireless on Mac requires a [LIVI Link](LIVI-LINK.md)
+- **Apple CarPlay** (wired & wireless) on Linux and Mac, wired on Android - requires MFi Authentication
+- **Android Auto** (wired & wireless) on Linux and Mac, wired on Android - wireless on Mac requires a LIVI Link
 
 ## Native Apple CarPlay Ultra
 
@@ -229,8 +229,8 @@ DAB+ radio via USB RTL-SDR (RTL2832U with R820T2).
 LIVI can run as multiple windows at once, each placeable on its own physical display.
 The Dash and Aux windows are freely assignable and can show the Dashes, the reverse camera or the media player. Assignment is not exclusive: any feature can be shown on one, several, or all windows at the same time.
 
-Configure each window under Settings → Window Settings
-(Main Screen / Dash Screen / Aux Screen), and assign features under
+Configure each window under Settings → General → Screen Settings
+(Main Screen / Cluster Screen / Aux Screen), and assign features under
 Settings → General → Tab Settings.
 
 <p align="center">
@@ -315,8 +315,20 @@ In that case:
 
 After this, the app will launch normally and future updates will work without additional steps.
 
+## Android (arm64) – Experimental
+
+> [!WARNING]
+> The Android port is experimental. It is tested on AOSP Android 17 and on a Pixel 8 with latest GrapheneOS.
+
+Install `LIVI-*-android-arm64.apk` on Android 10 or newer.
+
+- Wired CarPlay and wired Android Auto, wireless is not supported yet
+- CarPlay asks once for a local VPN, LIVI uses it to reach the iPhone over USB. Android runs one VPN at a time, so turn other VPNs off
+
 ## Build Environment
 
+![rust](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-rust.json)
+![slint](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-slint.json)
 ![gstreamer](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/f-io/LIVI/version/.github/badges/main-gstreamer.json)
 
 ### System Requirements (build)
@@ -391,6 +403,9 @@ cargo xtask package-linux
 cargo xtask package-mac
 cargo xtask package-mac --arch x64    # Intel on Apple Silicon
 
+# Android, needs cargo-ndk and the SDK and NDK named in android/gradle.properties
+cargo xtask package-android
+
 # Native binaries only
 cargo xtask build-native
 ```
@@ -398,7 +413,7 @@ cargo xtask build-native
 On macOS, `out/bin/LIVI` can be launched directly. The native binaries include
 their macOS identity, and the helpers run in the background without Dock icons.
 
-`package-linux` needs [appimagetool](https://github.com/AppImage/appimagetool) on the `PATH`, or its path in `APPIMAGETOOL`, and `desktop-file-validate` (package `desktop-file-utils`).
+`package-linux` downloads and verifies appimagetool automatically, or uses the path in `APPIMAGETOOL`. It also needs `desktop-file-validate` (package `desktop-file-utils`).
 
 ## Debugging
 

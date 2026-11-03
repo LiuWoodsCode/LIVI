@@ -40,6 +40,7 @@ impl Projection {
                     duck_level: 1.0,
                     duck_ramp_ms: RAMP_UP_MS,
                     now_playing: NowPlaying::default(),
+                    video_playback: None,
                     navigation: Navigation::default(),
                 };
                 entry.device.merge(device);
@@ -103,9 +104,11 @@ impl Projection {
     pub(super) fn goodbye(&mut self, done: oneshot::Sender<()>) {
         let paging_stopped = self.devices.stop_paging();
         let (ended, sessions_ended) = oneshot::channel();
+        let aa = self.aa.clone();
         tokio::spawn(async move {
             paging_stopped.await;
             let _ = sessions_ended.await;
+            aa.phones_gone().await;
             let _ = done.send(());
         });
         if self.sessions.is_empty() {
@@ -115,7 +118,7 @@ impl Projection {
         println!("[core] goodbye to {} phone(s)", self.sessions.len());
         self.bye = Some(ended);
         for s in &self.sessions {
-            self.tell(s.link, Do::Close);
+            self.tell(s.link, Do::PowerDown);
         }
     }
 
@@ -268,7 +271,7 @@ impl Projection {
                     .and_then(|e| e.bt_mac().map(str::to_string))
                     .or_else(|| id.contains(':').then(|| id.to_string()));
                 if let Some(mac) = mac {
-                    tokio::spawn(devices::wake(mac, protocol));
+                    tokio::spawn(self.devices.shared.clone().wake(mac, protocol));
                 }
             }
         }
@@ -294,7 +297,7 @@ impl Projection {
             });
         }
         if let Some(mac) = gone.bt_mac() {
-            tokio::spawn(devices::unpair(mac.to_string()));
+            tokio::spawn(self.devices.shared.clone().unpair(mac.to_string()));
         }
         self.publish();
     }
@@ -311,9 +314,15 @@ impl Projection {
             position: position.map_or(0, |i| i as u32 + 1),
             total: self.sessions.len() as u32,
         };
-        let (now_playing, mut navigation) = self
+        let (now_playing, video_playback, mut navigation) = self
             .active()
-            .map(|s| (s.now_playing.clone(), s.navigation.clone()))
+            .map(|s| {
+                (
+                    s.now_playing.clone(),
+                    s.video_playback,
+                    s.navigation.clone(),
+                )
+            })
             .unwrap_or_default();
         written_out(
             &mut navigation,
@@ -325,6 +334,7 @@ impl Projection {
             s.front.aux = aux;
             s.sessions = sessions;
             s.now_playing = now_playing;
+            s.video_playback = video_playback;
             s.navigation = navigation;
             s.devices = list;
             s.cluster = self.cluster.clone();

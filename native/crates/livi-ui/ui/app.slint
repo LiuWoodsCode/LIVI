@@ -15,8 +15,9 @@ import { SettingsView, SettingsState, ScreenKind, RowData, RowKind, PickData, Kn
 import { Dashboard, DashState, GaugeData, CapData, TrailData, LabelData } from "dashboard.slint";
 import { LevelOverlay, PhoneOverlay, OverlayState } from "overlays.slint";
 import { MaskData } from "mask.slint";
+import { TouchCalibration, TouchCalibrationState } from "touch_calibration.slint";
 
-export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData }
+export { Theme, Focus, FocusZone, Page, PhoneState, TabData, TouchPhase, SettingsState, ScreenKind, RowData, RowKind, PickData, KnobData, MediaText, Press, DabState, StationData, DashState, GaugeData, CapData, TrailData, LabelData, OverlayState, MaskData, TouchCalibrationState }
 
 export component AppWindow inherits Window {
     in-out property <Page> page: Page.media;
@@ -28,9 +29,12 @@ export component AppWindow inherits Window {
     in property <int> stream-width: 1280;
     in property <int> stream-height: 720;
     in property <MaskData> main-mask;
+    in property <bool> video-shown;
+    in property <bool> video-playing;
+    in property <float> video-elapsed-ms;
+    in property <float> video-total-ms;
     in property <bool> camera-found;
     in property <string> no-camera: "No camera found";
-    in property <string> status;
 
     in property <string> track-title;
     in property <string> artist;
@@ -48,6 +52,9 @@ export component AppWindow inherits Window {
 
     callback page-chosen(Page);
     callback touch(TouchPhase, float, float);
+    callback video-play-pause();
+    callback video-seek(float);
+    callback video-close();
     callback play-pause();
     callback prev();
     callback next();
@@ -89,20 +96,31 @@ export component AppWindow inherits Window {
     min-height: 200px;
     background: transparent;
 
-    changed height => { Ui.height = self.height; }
-    changed width => { Ui.width = self.width; }
+    out property <length> content-left: self.safe-area-insets.left;
+    out property <length> content-top: self.safe-area-insets.top;
+    out property <length> content-width: self.width - self.safe-area-insets.left - self.safe-area-insets.right;
+    out property <length> content-height: self.height - self.safe-area-insets.top - self.safe-area-insets.bottom;
+
+    changed content-height => { Ui.height = self.content-height; }
+    changed content-width => { Ui.width = self.content-width; }
     init => {
-        Ui.height = self.height;
-        Ui.width = self.width;
+        Ui.height = self.content-height;
+        Ui.width = self.content-width;
         root.wake-nav();
     }
 
     if root.page == Page.telemetry: Dashboard {
-        width: root.width;
-        height: root.height;
+        x: root.content-left;
+        y: root.content-top;
+        width: root.content-width;
+        height: root.content-height;
     }
 
     HorizontalLayout {
+        x: root.content-left;
+        y: root.content-top;
+        width: root.content-width;
+        height: root.content-height;
         if !root.right-hand && !root.nav-hidden: Nav {
             tabs: root.tabs;
             active: root.page;
@@ -125,7 +143,21 @@ export component AppWindow inherits Window {
                 stream-width: root.stream-width;
                 stream-height: root.stream-height;
                 mask: root.main-mask;
+                video-shown: root.video-shown;
+                video-playing: root.video-playing;
+                video-elapsed-ms: root.video-total-ms > 0 ? root.video-elapsed-ms : root.elapsed-ms;
+                video-total-ms: root.video-total-ms > 0 ? root.video-total-ms : root.total-ms;
+                video-can-seek: root.video-total-ms > 0 || root.can-seek;
                 touch(phase, x, y) => { root.touch(phase, x, y); }
+                video-play-pause => { root.video-play-pause(); }
+                video-seek(f) => {
+                    if (root.video-total-ms > 0) {
+                        root.video-seek(f);
+                    } else {
+                        root.seek(f);
+                    }
+                }
+                video-close => { root.video-close(); }
             }
             if root.page == Page.media: MediaPage {
                 width: parent.width;
@@ -161,13 +193,6 @@ export component AppWindow inherits Window {
                     font-size: 20px;
                 }
             }
-            if root.status != "": Text {
-                x: 16px;
-                y: parent.height - 32px;
-                text: root.status;
-                color: #ff8a80;
-                font-size: 14px;
-            }
         }
         if root.right-hand && !root.nav-hidden: Nav {
             tabs: root.tabs;
@@ -184,14 +209,18 @@ export component AppWindow inherits Window {
     }
 
     LevelOverlay {
-        window-width: root.width;
-        x: (root.width - self.width) / 2;
-        y: 16px;
+        window-width: root.content-width;
+        x: root.content-left + (root.content-width - self.width) / 2;
+        y: root.content-top + 16px;
     }
     PhoneOverlay {
-        window-width: root.width;
-        x: root.width - self.width - 16px;
-        y: 16px;
+        window-width: root.content-width;
+        x: root.content-left + root.content-width - self.width - 16px;
+        y: root.content-top + 16px;
+    }
+    if TouchCalibrationState.active: TouchCalibration {
+        width: root.width;
+        height: root.height;
     }
 }
 

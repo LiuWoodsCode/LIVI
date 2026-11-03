@@ -16,6 +16,8 @@ pub struct State {
     pub front: PerScreen<Front>,
     pub sessions: Sessions,
     pub now_playing: NowPlaying,
+    #[serde(default)]
+    pub video_playback: Option<VideoPlayback>,
     pub navigation: Navigation,
     pub system: System,
     pub devices: Vec<DeviceView>,
@@ -294,6 +296,14 @@ pub struct NowPlaying {
     pub artwork: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoPlayback {
+    pub playing: bool,
+    pub position_ms: f64,
+    pub duration_ms: Option<f64>,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Sessions {
@@ -330,10 +340,12 @@ pub enum Front {
 #[serde(rename_all = "camelCase")]
 pub struct Display {
     pub connector: String,
+    pub id: String,
     pub panel: String,
     pub screen: Option<Screen>,
     pub current: Option<String>,
     pub modes: Vec<String>,
+    pub touch: Vec<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]

@@ -20,3 +20,6 @@ libc.workspace = true
 
 [target.'cfg(target_os = "macos")'.dependencies]
 gstreamer.workspace = true
+
+[target.'cfg(target_os = "android")'.dependencies]
+livi-video-view.workspace = true

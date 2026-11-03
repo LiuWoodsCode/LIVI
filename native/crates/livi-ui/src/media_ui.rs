@@ -48,7 +48,7 @@ fn tick(ui: &AppWindow) {
             .set_playing(l.dab_guess.shown(l.dab_playing, now));
         l.playback.running() || l.playback.guessing(now) || l.dab_guess.pending(now)
     });
-    let wanted = keep && ui.get_page() == Page::Media;
+    let wanted = keep && (ui.get_page() == Page::Media || ui.get_video_shown());
     TICK.with(|t| match (wanted, t.running()) {
         (true, false) => {
             let weak = ui.as_weak();
@@ -246,11 +246,18 @@ pub fn wire(ui: &AppWindow, client: &Client) {
     ui.on_prev(button(Pressed::Prev, MediaControl::Prev));
     ui.on_next(button(Pressed::Next, MediaControl::Next));
     ui.on_seek({
-        let c = client.clone();
+        let (c, weak) = (client.clone(), weak.clone());
         move |f| {
-            let total = LIVE.with_borrow(|l| l.duration_ms);
+            let position = LIVE.with_borrow_mut(|l| {
+                let position = l.duration_ms * f64::from(f);
+                l.playback.seek(position, Instant::now());
+                position
+            });
+            if let Some(ui) = weak.upgrade() {
+                tick(&ui);
+            }
             c.act(Action::Seek {
-                position_ms: (total * f64::from(f)).round() as u32,
+                position_ms: position.round() as u32,
             });
         }
     });

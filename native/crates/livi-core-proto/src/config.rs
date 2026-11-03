@@ -136,11 +136,15 @@ pub struct Config {
     pub display_mode: PerScreen<String>,
     pub display_connector: PerScreen<String>,
 
+    pub screen_width_mm: PerScreen<u32>,
+    pub screen_height_mm: PerScreen<u32>,
+
     pub display_gamma: f64,
     pub display_contrast: f64,
     pub display_color_r: f64,
     pub display_color_g: f64,
     pub display_color_b: f64,
+    pub touch_calibration: std::collections::BTreeMap<String, TouchCalibration>,
 
     pub camera_id: String,
     pub camera: PerScreen<bool>,
@@ -342,6 +346,26 @@ pub struct WindowBounds {
     pub height: u32,
 }
 
+pub const TOUCH_IDENTITY: [f64; 6] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TouchCalibration {
+    pub display: String,
+    pub enabled: bool,
+    pub matrix: [f64; 6],
+}
+
+impl Default for TouchCalibration {
+    fn default() -> Self {
+        Self {
+            display: String::new(),
+            enabled: false,
+            matrix: TOUCH_IDENTITY,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct KeyBindings {
@@ -506,11 +530,14 @@ pub fn defaults() -> Config {
         appearance_mode: AppearanceMode::Auto,
         display_mode: PerScreen::default(),
         display_connector: PerScreen::default(),
+        screen_width_mm: PerScreen::default(),
+        screen_height_mm: PerScreen::default(),
         display_gamma: 1.0,
         display_contrast: 1.0,
         display_color_r: 1.0,
         display_color_g: 1.0,
         display_color_b: 1.0,
+        touch_calibration: Default::default(),
         camera_id: String::new(),
         camera: main_only,
         camera_mirror: false,

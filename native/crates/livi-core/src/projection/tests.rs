@@ -68,6 +68,7 @@ impl Rig {
             front: livi(),
             sessions: Default::default(),
             now_playing: Default::default(),
+            video_playback: None,
             telemetry: Default::default(),
             navigation: Default::default(),
             system: Default::default(),
@@ -89,6 +90,7 @@ impl Rig {
         let devices = Devices::new(
             &dir.0.join("devices.json"),
             livi_cp::helper_sock::HelperSock::new(dir.0.join("cp-bt.sock")),
+            crate::devices::Shared::new(dir.0.join("livi-shared.sock")),
         );
         let (phone_io, io) = mpsc::unbounded_channel();
         let (telemetry_tx, telemetry) = mpsc::unbounded_channel();
@@ -1794,7 +1796,7 @@ async fn the_goodbye_ends_every_session_and_is_answered_after_the_last() {
     let (done, mut heard) = oneshot::channel();
     rig.p.goodbye(done);
     assert!(rig.drain().contains(&CpCmd::Close { id: 1 }));
-    assert!(rig.aa_drain().contains(&AaCmd::Close { id: 5 }));
+    assert!(rig.aa_drain().contains(&aa(5, SessionCmd::PowerDown)));
     rig.p.on_event(CpEvent::Disconnected { id: 1 });
     tokio::time::sleep(Duration::from_millis(50)).await;
     assert!(heard.try_recv().is_err());

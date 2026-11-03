@@ -49,7 +49,7 @@ impl ConfigFile {
             && file.get("projectionHeight").is_none()
             && let Some((w, h)) = host.panel_px
         {
-            let (w, h) = fit_720p(w, h);
+            let (w, h) = fit_720p(w.max(h), w.min(h));
             println!("[core] projection defaults from the panel: {w}x{h}");
             defaults.projection_width = w;
             defaults.projection_height = h;
@@ -134,9 +134,9 @@ fn current_names(file: &Value) -> Value {
     ] {
         rename(top, old, new);
     }
-    if let Some(Value::String(main)) = top.remove("displayMode") {
+    if let Some(Value::String(main)) = top.get("displayMode") {
         let screens = [
-            ("main", main),
+            ("main", main.clone()),
             ("cluster", String::new()),
             ("aux", String::new()),
         ]
@@ -226,6 +226,7 @@ fn keep_typed(input: &Value, schema: &Value) -> Value {
     for (key, def) in schema {
         let chosen = match (source.and_then(|s| s.get(key)), def) {
             (None, _) => def.clone(),
+            (Some(v), Value::Object(fields)) if v.is_object() && fields.is_empty() => v.clone(),
             (Some(v), Value::Object(_)) if v.is_object() => keep_typed(v, def),
             (Some(v), _) if same_type(v, def) => v.clone(),
             _ => def.clone(),
@@ -249,7 +250,11 @@ fn merge_into(fields: &mut Map<String, Value>, key: &str, v: &Value) {
     match (fields.get_mut(key), v) {
         (Some(Value::Object(now)), Value::Object(changed)) => {
             for (k, inner) in changed {
-                merge_into(now, k, inner);
+                if inner.is_null() {
+                    now.remove(k);
+                } else {
+                    merge_into(now, k, inner);
+                }
             }
         }
         _ => {
@@ -358,6 +363,20 @@ pub mod tests {
     }
 
     #[test]
+    fn a_portrait_panel_gives_a_landscape_projection() {
+        let dir = TempDir::new();
+        let host = HostFacts {
+            car_name: None,
+            panel_px: Some((1080, 2400)),
+        };
+        let config = file_in(&dir).load(&host);
+        assert_eq!(
+            (config.projection_width, config.projection_height),
+            (1280, 576)
+        );
+    }
+
+    #[test]
     fn the_old_dash_names_come_over_and_are_written_under_the_new_ones() {
         let dir = TempDir::new();
         let bounds = json!({ "x": 8, "y": 31, "width": 1211, "height": 678 });
@@ -419,6 +438,22 @@ pub mod tests {
         }
         assert_eq!(live["clusterScreenWidth"], 1024);
         assert_eq!(live["dashboard"]["cluster"], true);
+    }
+
+    #[test]
+    fn a_display_mode_per_screen_survives_loading() {
+        let file = json!({ "displayMode": { "main": "1920x1080", "cluster": "", "aux": "" } });
+        let config = merge(&current_names(&file), &defaults());
+        assert_eq!(config.display_mode.main, "1920x1080");
+    }
+
+    #[test]
+    fn maps_keep_their_entries() {
+        let file = json!({ "clusterPalettes": { "livi.dark": "#112233" } });
+        let config = merge(&file, &defaults());
+        assert_eq!(config.cluster_palettes["livi.dark"], "#112233");
+        let broken = json!({ "clusterPalettes": { "livi.dark": 7 } });
+        assert!(merge(&broken, &defaults()).cluster_palettes.is_empty());
     }
 
     #[test]
@@ -545,6 +580,17 @@ pub mod tests {
         let next = apply_patch(&defaults(), &json!({ "primaryColorDark": null })).unwrap();
         assert_eq!(next.primary_color_dark, None);
         assert!(apply_patch(&defaults(), &json!({ "carName": null })).is_err());
+        let mut palettes = defaults();
+        palettes
+            .cluster_palettes
+            .insert("livi.dark".into(), "#112233".into());
+        let next = apply_patch(
+            &palettes,
+            &json!({ "clusterPalettes": { "livi.dark": null } }),
+        )
+        .unwrap();
+        assert!(next.cluster_palettes.is_empty());
+        assert!(apply_patch(&defaults(), &json!({ "kiosk": { "main": null } })).is_err());
     }
 
     #[test]
