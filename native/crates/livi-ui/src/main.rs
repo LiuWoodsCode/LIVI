@@ -2,6 +2,8 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Additional terms: see NOTICE
 
+#[cfg(target_os = "macos")]
+mod baa_signing;
 mod bundle;
 mod clock;
 mod core_process;
@@ -415,6 +417,8 @@ fn wire(ui: &AppWindow, client: &Client) {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
+    #[cfg(target_os = "macos")]
+    baa_signing::prepare();
     if let Some(b) = bundle::find() {
         b.use_bundled_gstreamer();
     }

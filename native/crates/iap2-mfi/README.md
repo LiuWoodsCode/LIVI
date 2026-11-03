@@ -34,8 +34,23 @@ This signs only `livi-helperd` with
 `dev.f-io.livi.helperd`. It does not change SIP, AMFI, or any system settings.
 Normal packages retain their existing entitlements and work on stock macOS.
 
-When running `out/bin/LIVI`, sign the helper it launches, from the repository root
-after building it:
+At startup, the macOS UI also checks the active SIP status and `kern.bootargs`.
+If SIP is fully disabled and `amfi_get_out_of_my_way` has a nonzero decimal or
+hexadecimal value (including `0x1`), it automatically repairs a helper missing
+the BAA entitlements. A detached worker signs and verifies a staged helper,
+terminates the launching LIVI process before it starts core, installs the helper,
+and relaunches LIVI with its original arguments. For a bundled helper it also
+refreshes and verifies the outer app signature, preserving the app's signing
+identifier and entitlements. It honors `LIVI_HELPER_BIN`, `LIVI_RESOURCES`, and
+`LIVI_ROOT`. Signing errors go to `livi-baa-signing-<pid>/repair.log` in the user's
+temporary directory; an error before shutdown leaves LIVI running normally.
+This only reads the system configuration; it does not change SIP or boot args.
+The worker restores the original helper if installation or app signing fails,
+and its relaunch has a one-launch guard to prevent repeated repair attempts.
+Fixture previews and a UI launched by core skip automatic signing.
+
+To sign manually when automatic repair is skipped, sign the helper launched by
+`out/bin/LIVI`, from the repository root after building it:
 
 ```sh
 codesign --force --sign - --identifier dev.f-io.livi.helperd \
@@ -47,8 +62,9 @@ Signing `native/target/debug/livi-helperd` does not sign the separate copy in
 `out/bin`. To use a debug helper instead, sign that executable and launch with
 `LIVI_HELPER_BIN="$PWD/native/target/debug/livi-helperd" out/bin/LIVI`.
 
-Rebuilding replaces the signature, so sign the new executable again. The helper
-checks its entitlements before selecting BAA or allowing wired CarPlay to start
+Rebuilding replaces the signature. Eligible machines repeat the automatic repair
+on the next launch; otherwise repeat manual signing. The helper checks its
+entitlements before selecting BAA or allowing wired CarPlay to start
 without a LIVI Link. Imported MFi files take priority, then a connected LIVI Link,
 then BAA. Disconnecting the Link restores BAA.
 
