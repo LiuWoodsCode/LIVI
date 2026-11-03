@@ -571,6 +571,7 @@ mod tests {
                 favorite: false,
                 hidden: false,
                 logo: None,
+                internet: None,
             }],
             last_station: Some(0xd210),
         };

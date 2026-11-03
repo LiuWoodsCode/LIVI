@@ -63,7 +63,14 @@ pub fn receiver(d: &Dab, t: &Strings) -> Vec<Row> {
             label: t.with(
                 "settings.dabStations",
                 "{{count}} stations",
-                &[("count", &d.stations.len().to_string())],
+                &[(
+                    "count",
+                    &d.stations
+                        .iter()
+                        .filter(|st| st.internet.is_none())
+                        .count()
+                        .to_string(),
+                )],
             ),
             icon: settings_icon("dabStations"),
             button: t.t("settings.dabScan", "Scan"),
@@ -83,7 +90,7 @@ pub fn stations(d: &Dab, t: &Strings) -> Vec<Row> {
         return vec![info(
             t.t(
                 "media.noStations",
-                "No stations yet, scan under Settings > Radio > DAB+",
+                "No stations yet, add stations under Settings > Radio",
             ),
             None,
             String::new(),

@@ -40,6 +40,7 @@ mod host_setup;
 mod http;
 mod hub;
 mod hwaddr;
+mod internet_radio;
 mod kiosk_unit;
 pub mod log_file;
 mod mfi;

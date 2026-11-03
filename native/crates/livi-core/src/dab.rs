@@ -23,6 +23,8 @@ use crate::state_files::{Sdr, load_sdr, save_sdr};
 pub enum DabAsk {
     Scan,
     StopScan,
+    SaveInternet(livi_core_proto::state::InternetRadioDraft),
+    DeleteInternet(u32),
     Play(u32),
     Resume,
     Pause,
@@ -37,6 +39,9 @@ fn merged(own: &[DabStation], mut found: Vec<DabStation>) -> Vec<DabStation> {
     let mut out: Vec<DabStation> = own
         .iter()
         .filter_map(|old| {
+            if old.internet.is_some() {
+                return Some(old.clone());
+            }
             let at = found.iter().position(|f| f.service_id == old.service_id)?;
             let mut st = found.remove(at);
             st.favorite = old.favorite;
@@ -47,6 +52,30 @@ fn merged(own: &[DabStation], mut found: Vec<DabStation>) -> Vec<DabStation> {
     found.sort_by_key(|s| s.label.to_lowercase());
     out.extend(found);
     out
+}
+
+fn merge_scan(own: &mut Sdr, found: Vec<DabStation>) {
+    // DAB service IDs cover the full u32 range. Relocate any saved stream that
+    // collides with a newly discovered service before combining the lists.
+    let mut used: std::collections::HashSet<_> = own
+        .stations
+        .iter()
+        .chain(&found)
+        .map(|st| st.service_id)
+        .collect();
+    for st in own.stations.iter_mut().filter(|st| st.internet.is_some()) {
+        if found.iter().any(|f| f.service_id == st.service_id) {
+            let Some(id) = (1..=u32::MAX).rev().find(|id| !used.contains(id)) else {
+                return;
+            };
+            if own.last_station == Some(st.service_id) {
+                own.last_station = Some(id);
+            }
+            st.service_id = id;
+            used.insert(id);
+        }
+    }
+    own.stations = merged(&own.stations, found);
 }
 
 pub fn media_ask(dab: &Dab, phone_in_front: bool, control: MediaControl) -> Option<DabAsk> {
@@ -200,6 +229,14 @@ pub async fn run(
         logos: load_images(&user_data.join(LOGOS)),
     };
     hidden_last(&mut out.own.stations);
+    eprintln!(
+        "[internet-radio] loaded {} saved stations",
+        out.own
+            .stations
+            .iter()
+            .filter(|st| st.internet.is_some())
+            .count()
+    );
     let gains_db = livi_rtlsdr::gains()
         .into_iter()
         .map(|g| g as f64 / 10.0)
@@ -216,7 +253,19 @@ pub async fn run(
     let mut state: watch::Receiver<State> = hub.watch();
     let mut tune = tuning(&state.borrow());
     let mut audio = Audio::default();
+    let mut host_events = gst.subscribe();
     let mut found: Vec<DabStation> = Vec::new();
+    if resume
+        && out
+            .own
+            .last_station
+            .and_then(|id| out.own.stations.iter().find(|st| st.service_id == id))
+            .is_some_and(|st| st.internet.is_some())
+    {
+        resume = false;
+        let s = state.borrow().clone();
+        out.resume(&mut audio, &s, tune);
+    }
 
     loop {
         tokio::select! {
@@ -224,6 +273,36 @@ pub async fn run(
                 let Some(ask) = ask else { return };
                 let s = state.borrow().clone();
                 match ask {
+                    DabAsk::SaveInternet(draft) => {
+                        eprintln!("[internet-radio] saving station {:?}, id={:?}", draft.name, draft.service_id);
+                        match crate::internet_radio::save(&mut out.own.stations, draft) {
+                            Ok(id) => {
+                                eprintln!("[internet-radio] saved station id={id:#x}");
+                                out.keep();
+                                hub.update(|s| s.dab.error = None);
+                                if s.dab.station == Some(id) && (s.dab.playing || audio.url_stream.is_some()) {
+                                    let updated = hub.watch().borrow().clone();
+                                    out.play(&mut audio, &updated, id, tune);
+                                }
+                            }
+                            Err(error) => {
+                                eprintln!("[internet-radio] ERROR saving station: {error}");
+                                hub.update(|s| s.dab.error = Some(error));
+                            }
+                        }
+                    }
+                    DabAsk::DeleteInternet(id) => {
+                        if out.own.stations.iter().any(|st| st.service_id == id && st.internet.is_some()) {
+                            eprintln!("[internet-radio] deleting station id={id:#x}");
+                            out.own.stations.retain(|st| st.service_id != id);
+                            if out.own.last_station == Some(id) { out.own.last_station = None; }
+                            if s.dab.station == Some(id) {
+                                audio.close(&gst);
+                                hub.update(|s| { s.dab.station = None; s.dab.active = false; s.dab.playing = false; s.dab.text = None; });
+                            }
+                            out.keep();
+                        }
+                    }
                     DabAsk::Scan => {
                         found.clear();
                         audio.close(&gst);
@@ -247,6 +326,7 @@ pub async fn run(
                         });
                     }
                     DabAsk::Pause => {
+                        if let Some(id) = audio.url_stream { eprintln!("[internet-radio] pausing stream={id:#x}"); }
                         audio.close(&gst);
                         let _ = cmd_tx.send(Cmd::Stop);
                         hub.update(|s| s.dab.playing = false);
@@ -270,15 +350,38 @@ pub async fn run(
                         }
                     }
                     DabAsk::Step(by) => {
-                        if let Some(service) = step_target(&s.dab.stations, s.dab.station, by) {
+                        let stations: Vec<_> = s.dab.stations.iter().filter(|st| st.internet.is_some() || s.dab.receiver.is_some()).cloned().collect();
+                        if let Some(service) = step_target(&stations, s.dab.station, by) {
                             out.play(&mut audio, &s, service, tune);
                         }
                     }
                 }
             }
+            ev = host_events.recv() => {
+                if let Ok(livi_media::gst_host::HostEvent::UrlStatus { plane, status }) = ev {
+                    if audio.url_stream == Some(plane) {
+                        let failed = status.failed || status.ended;
+                        let next = (status.playing, status.ready, status.buffered_percent);
+                        if failed {
+                            eprintln!("[internet-radio] ERROR stream={plane:#x}, station={:?}: failed={}, ended={}, ready={}, buffered_percent={:?} (see [gst-host] messages for GStreamer details)", state.borrow().dab.station, status.failed, status.ended, status.ready, status.buffered_percent);
+                            audio.close(&gst);
+                        } else if audio.url_status != Some(next) {
+                            eprintln!("[internet-radio] stream={plane:#x}: playing={}, ready={}, buffered_percent={:?}", status.playing, status.ready, status.buffered_percent);
+                            audio.url_status = Some(next);
+                        }
+                        hub.update(|s| {
+                            s.dab.playing = status.playing && !failed;
+                            if failed { s.dab.error = Some("Internet radio stream stopped or could not be played".into()); }
+                        });
+                    }
+                }
+            }
             ev = events.recv() => {
                 let Some(ev) = ev else { return };
+                let internet_selected = state.borrow().dab.station.and_then(|id| out.own.stations.iter().find(|st| st.service_id == id)).is_some_and(|st| st.internet.is_some());
+                if internet_selected && !matches!(&ev, Radio::Receiver(_) | Radio::Logo { .. }) { continue; }
                 match ev {
+                    Radio::Receiver(None) if internet_selected => { hub.update(|s| s.dab.receiver = None); }
                     Radio::Receiver(None) => {
                         audio.close(&gst);
                         found.clear();
@@ -306,7 +409,7 @@ pub async fn run(
                         hub.update(|s| if let Some(p) = s.dab.scan.as_mut() { p.found = n });
                     }
                     Radio::ScanDone => {
-                        out.own.stations = merged(&out.own.stations, std::mem::take(&mut found));
+                        merge_scan(&mut out.own, std::mem::take(&mut found));
                         out.keep();
                         hub.update(|s| s.dab.scan = None);
                     }
@@ -346,6 +449,9 @@ pub async fn run(
                     let _ = cmd_tx.send(Cmd::Tuning(tune));
                 }
                 audio.follow(&gst, &s);
+                if s.config.disable_audio_output && s.dab.playing {
+                    hub.update(|s| s.dab.playing = false);
+                }
             }
         }
     }
@@ -365,7 +471,9 @@ impl Out {
         let own = &self.own;
         let mut stations = own.stations.clone();
         for st in &mut stations {
-            st.logo = self.logos.get(&st.service_id).cloned();
+            if st.internet.is_none() {
+                st.logo = self.logos.get(&st.service_id).cloned();
+            }
         }
         self.hub.update(|s| {
             s.dab.stations = stations;
@@ -385,8 +493,12 @@ impl Out {
         }
         let list = &s.dab.stations;
         let wanted = s.dab.station.or(s.dab.last_station);
-        let pick = list.iter().find(|st| Some(st.service_id) == wanted);
-        if let Some(st) = pick.or(list.iter().find(|st| !st.hidden)) {
+        let available = |st: &&DabStation| st.internet.is_some() || s.dab.receiver.is_some();
+        let pick = list
+            .iter()
+            .filter(available)
+            .find(|st| Some(st.service_id) == wanted);
+        if let Some(st) = pick.or(list.iter().filter(available).find(|st| !st.hidden)) {
             self.play(audio, s, st.service_id, tuning);
         }
     }
@@ -397,12 +509,26 @@ impl Out {
                 .update(|s| s.dab.error = Some("station not in the list, scan again".into()));
             return;
         };
+        if st.internet.is_none() && s.dab.receiver.is_none() {
+            self.hub
+                .update(|s| s.dab.error = Some("No DAB receiver connected".into()));
+            return;
+        }
         audio.close(&self.gst);
-        let _ = self.cmds.send(Cmd::Play {
-            frequency: st.frequency_hz,
-            service,
-            tuning,
-        });
+        if let Some(internet) = &st.internet {
+            eprintln!(
+                "[internet-radio] playing station {:?}, id={service:#x}",
+                st.label
+            );
+            let _ = self.cmds.send(Cmd::Stop);
+            audio.open_url(&self.gst, s, &internet.url);
+        } else {
+            let _ = self.cmds.send(Cmd::Play {
+                frequency: st.frequency_hz,
+                service,
+                tuning,
+            });
+        }
         if self.own.last_station != Some(service) {
             self.own.last_station = Some(service);
             self.keep();
@@ -411,6 +537,7 @@ impl Out {
             s.dab.active = true;
             s.dab.scan = None;
             s.dab.station = Some(service);
+            s.dab.signal = Default::default();
             s.dab.playing = false;
             s.dab.text = None;
             s.dab.error = None;
@@ -467,10 +594,32 @@ fn load_images(dir: &Path) -> HashMap<u32, String> {
 #[derive(Default)]
 struct Audio {
     stream: Option<u32>,
+    url_stream: Option<u32>,
+    url_status: Option<(bool, bool, Option<u8>)>,
+    url: String,
+    device: String,
     level: f64,
 }
 
 impl Audio {
+    fn open_url(&mut self, gst: &GstHost, s: &State, url: &str) {
+        if s.config.disable_audio_output {
+            eprintln!("[internet-radio] cannot start: audio output is disabled");
+            return;
+        }
+        self.device = s.config.audio_output_device.clone().unwrap_or_default();
+        self.url = url.into();
+        let id = gst.play_radio(url, &self.device);
+        self.url_stream = Some(id);
+        self.url_status = None;
+        eprintln!(
+            "[internet-radio] opening stream={id:#x}, output={:?}, volume={}",
+            self.device, s.config.audio_volume
+        );
+        self.level = s.config.audio_volume;
+        gst.set_audio_volume(id, self.level, 0);
+    }
+
     async fn open(&mut self, gst: &GstHost, s: &State, asc: &[u8], rate: u32, channels: u8) {
         self.close(gst);
         if s.config.disable_audio_output {
@@ -506,7 +655,20 @@ impl Audio {
     }
 
     fn follow(&mut self, gst: &GstHost, s: &State) {
-        let Some(id) = self.stream else { return };
+        let Some(id) = self.stream.or(self.url_stream) else {
+            return;
+        };
+        let device = s.config.audio_output_device.clone().unwrap_or_default();
+        if self.url_stream.is_some() && self.device != device {
+            eprintln!(
+                "[internet-radio] reopening stream={id:#x}: output changed from {:?} to {device:?}",
+                self.device
+            );
+            let url = self.url.clone();
+            self.close(gst);
+            self.open_url(gst, s, &url);
+            return;
+        }
         if s.config.disable_audio_output {
             self.close(gst);
             return;
@@ -518,6 +680,11 @@ impl Audio {
     }
 
     fn close(&mut self, gst: &GstHost) {
+        if let Some(id) = self.url_stream.take() {
+            eprintln!("[internet-radio] closing stream={id:#x}");
+            self.url_status = None;
+            gst.stop(id);
+        }
         if let Some(id) = self.stream.take() {
             gst.close_audio(id);
         }
@@ -924,6 +1091,7 @@ fn stations(e: &Ensemble, channel: &str, frequency: u32) -> Vec<DabStation> {
                 favorite: false,
                 hidden: false,
                 logo: None,
+                internet: None,
             })
         })
         .collect()
@@ -969,6 +1137,42 @@ mod tests {
     }
 
     #[test]
+    fn discovered_dab_ids_do_not_collide_with_saved_stream_ids() {
+        let mut station = named(u32::MAX, "Internet", true);
+        station.internet = Some(Default::default());
+        let mut own = Sdr {
+            stations: vec![station],
+            last_station: Some(u32::MAX),
+        };
+        merge_scan(&mut own, vec![named(u32::MAX, "DAB", false)]);
+        assert_eq!(own.stations.len(), 2);
+        assert_ne!(own.stations[0].service_id, own.stations[1].service_id);
+        assert_eq!(own.last_station, Some(own.stations[0].service_id));
+        assert!(own.stations[0].favorite && own.stations[0].internet.is_some());
+    }
+
+    #[test]
+    fn a_dab_rescan_preserves_internet_stations_and_their_order() {
+        let mut internet = named(u32::MAX, "Internet", true);
+        internet.internet = Some(livi_core_proto::state::InternetStation {
+            url: "https://radio.example/live".into(),
+            description: "News".into(),
+        });
+        let old = vec![named(1, "Old DAB name", true), internet.clone()];
+        let next = merged(
+            &old,
+            vec![
+                named(1, "New DAB name", false),
+                named(2, "New station", false),
+            ],
+        );
+        assert_eq!(ids(&next), vec![1, u32::MAX, 2]);
+        assert_eq!(next[1], internet);
+        assert!(next[0].favorite);
+        assert_eq!(step_target(&next, Some(1), 1), Some(u32::MAX));
+    }
+
+    #[test]
     fn a_scanned_ensemble_becomes_stations() {
         let list = stations(&ensemble(), "5C", 178_352_000);
         assert_eq!(
@@ -983,6 +1187,7 @@ mod tests {
                 favorite: false,
                 hidden: false,
                 logo: None,
+                internet: None,
             }]
         );
         assert!(labels_complete(&ensemble()));

@@ -227,7 +227,34 @@ impl<O: Outside> Host<O> {
         }
     }
 
+    pub(super) fn play_radio(&mut self, id: u32, rest: &[u8]) {
+        let Some((url, device)) = parse_url_body(rest) else {
+            eprintln!("[internet-radio] ERROR stream={id:#x}: malformed playback request");
+            return;
+        };
+        eprintln!("[internet-radio] host opening stream={id:#x}, output={device:?}");
+        self.radio_players.remove(&id);
+        if let Some(player) = self.outside.play_radio(id, &url, &device) {
+            player.start();
+            self.radio_players.insert(id, player);
+        } else {
+            eprintln!("[internet-radio] ERROR stream={id:#x}: could not create audio player");
+            self.wire.reply(
+                REPLY_URL_STATUS,
+                id,
+                &url_status_body(&UrlStatus {
+                    failed: true,
+                    ..Default::default()
+                }),
+            );
+        }
+    }
+
     pub fn pump_url_status(&self) {
+        for (id, player) in &self.radio_players {
+            self.wire
+                .reply(REPLY_URL_STATUS, *id, &url_status_body(&player.status()));
+        }
         for (id, player) in &self.url_players {
             self.wire
                 .reply(REPLY_URL_STATUS, *id, &url_status_body(&player.status()));

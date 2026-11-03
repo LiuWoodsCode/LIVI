@@ -53,6 +53,8 @@ plugins=(
   playback
   adaptivedemux2
   soup
+  # ICY/Shoutcast metadata in internet radio streams.
+  icydemux
   isomp4
   mpegtsdemux
 )

@@ -15,7 +15,7 @@ mod url_player;
 #[cfg(target_os = "android")]
 pub use android_view::{Views, set_surface, set_views};
 pub use camera::{CameraPlayer, direction, watch_cameras};
-pub use url_player::UrlPlayer;
+pub use url_player::{AudioUrlPlayer, UrlPlayer};
 
 pub type Say = Arc<dyn Fn(&str) + Send + Sync>;
 

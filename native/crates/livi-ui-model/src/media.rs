@@ -256,10 +256,17 @@ pub fn dab(state: &Value) -> Dab {
     let d = &state["dab"];
     let tuned = d["station"].as_u64().map(|v| v as u32);
     let mut out = Dab {
-        receiver: !d["receiver"].is_null(),
+        receiver: !d["receiver"].is_null()
+            || d["stations"]
+                .as_array()
+                .is_some_and(|list| list.iter().any(|st| st["internet"].is_object())),
         active: d["active"].as_bool().unwrap_or(false),
         playing: d["playing"].as_bool().unwrap_or(false),
-        text: d["text"].as_str().unwrap_or("").to_string(),
+        text: d["text"]
+            .as_str()
+            .or_else(|| d["error"].as_str())
+            .unwrap_or("")
+            .to_string(),
         tuned,
         ..Dab::default()
     };
@@ -280,16 +287,23 @@ pub fn dab(state: &Value) -> Dab {
         let label = st["label"].as_str().unwrap_or("").to_string();
         if Some(id) == tuned {
             out.title = Some(label.clone());
-            out.ensemble = format!(
-                "{} · {}",
-                st["ensemble"].as_str().unwrap_or(""),
-                st["channel"].as_str().unwrap_or("")
-            );
+            out.ensemble = if st["internet"].is_object() {
+                st["internet"]["description"]
+                    .as_str()
+                    .unwrap_or("")
+                    .to_string()
+            } else {
+                format!(
+                    "{} · {}",
+                    st["ensemble"].as_str().unwrap_or(""),
+                    st["channel"].as_str().unwrap_or("")
+                )
+            };
             out.tuned_favorite = st["favorite"].as_bool().unwrap_or(false);
             out.tuned_logo = st["logo"].as_str().map(str::to_string);
         }
     }
-    let shown_label = out.title.clone().unwrap_or_else(|| "DAB+".into());
+    let shown_label = out.title.clone().unwrap_or_else(|| "Radio".into());
     out.tuned_initials = initials(&shown_label);
     out.tuned_badge = badge(&shown_label);
     out.stations = all
@@ -324,6 +338,21 @@ mod tests {
 
     fn at(base: Instant, ms: u64) -> Instant {
         base + Duration::from_millis(ms)
+    }
+
+    #[test]
+    fn internet_radio_is_available_without_a_dab_receiver() {
+        let state = json!({ "dab": {
+            "receiver": null, "station": 4294967295u32, "active": true, "playing": true,
+            "stations": [{ "serviceId": 4294967295u32, "label": "Online News", "favorite": true,
+                "internet": { "url": "https://radio.example/live", "description": "Local news" } }]
+        } });
+        let radio = dab(&state);
+        assert!(radio.receiver && radio.active && radio.playing);
+        assert_eq!(radio.stations.len(), 1);
+        assert_eq!(radio.title.as_deref(), Some("Online News"));
+        assert_eq!(radio.ensemble, "Local news");
+        assert!(radio.tuned_favorite && radio.stations[0].tuned);
     }
 
     #[test]

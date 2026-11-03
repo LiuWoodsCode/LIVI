@@ -12,10 +12,9 @@ use crate::Say;
 
 const PICKED_RANK: i32 = 1024;
 
-pub struct UrlPlayer {
+pub struct AudioUrlPlayer {
     playbin: gst::Element,
     heard: Arc<Mutex<Heard>>,
-    view: crate::WindowView,
     say: Say,
 }
 
@@ -61,22 +60,93 @@ impl Hold {
     }
 }
 
+pub struct UrlPlayer {
+    playback: AudioUrlPlayer,
+    view: crate::WindowView,
+}
+
 impl UrlPlayer {
     pub fn new(url: &str, audio_device: &str, window: usize, say: Say) -> Option<Self> {
         crate::ensure_init();
         prefer_our_decoders();
+        let video = video_sink(&say)?;
+        let playback = AudioUrlPlayer::build(url, audio_device, Some(video.clone()), say)?;
+        let view = crate::WindowView::default();
+        view.attach(window, crate::RANK_URL, Some(&video));
+        Some(Self { playback, view })
+    }
+
+    pub fn start(&self) {
+        self.playback.start();
+    }
+    pub fn stop(&self) {
+        self.playback.stop();
+        self.view.remove();
+    }
+    pub fn set_visible(&self, visible: bool) {
+        self.view.set_visible(visible);
+    }
+    pub fn set_content_region(
+        &self,
+        crop_l: f64,
+        crop_t: f64,
+        vis_w: f64,
+        vis_h: f64,
+        tier_w: f64,
+        tier_h: f64,
+    ) {
+        self.view
+            .set_region(crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
+    }
+    pub fn set_rate(&self, rate: f64) {
+        self.playback.set_rate(rate);
+    }
+    pub fn seek(&self, seconds: f64) {
+        self.playback.seek(seconds);
+    }
+    pub fn set_volume(&self, level: f64) {
+        self.playback.set_volume(level);
+    }
+    pub fn set_muted(&self, muted: bool) {
+        self.playback.set_muted(muted);
+    }
+    pub fn status(&self) -> UrlStatus {
+        self.playback.status()
+    }
+}
+
+impl Drop for UrlPlayer {
+    fn drop(&mut self) {
+        let _ = self.playback.playbin.set_state(gst::State::Null);
+        self.view.remove();
+    }
+}
+
+impl AudioUrlPlayer {
+    pub fn new(url: &str, audio_device: &str, say: Say) -> Option<Self> {
+        Self::build(url, audio_device, None, say)
+    }
+
+    fn build(url: &str, audio_device: &str, video: Option<gst::Element>, say: Say) -> Option<Self> {
+        crate::ensure_init();
         let playbin = gst::ElementFactory::make("playbin3")
             .property("uri", url)
             .build()
             .inspect_err(|e| say(&format!("[gst_video] no playbin3: {e}")))
             .ok()?;
-        playbin.set_property_from_str("flags", "video+audio+soft-volume+buffering");
-        let video = video_sink(&say)?;
-        let view = crate::WindowView::default();
-        view.attach(window, crate::RANK_URL, Some(&video));
+        playbin.set_property_from_str(
+            "flags",
+            if video.is_some() {
+                "video+audio+soft-volume+buffering"
+            } else {
+                "audio+soft-volume+buffering"
+            },
+        );
+        if let Some(video) = video {
+            playbin.set_property("video-sink", video);
+        }
         let heard = Arc::new(Mutex::new(Heard::default()));
-        playbin.set_property("video-sink", video);
-        if let Some(sink) = audio_sink(audio_device) {
+        if let Some(sink) = audio_sink(audio_device, &say) {
             playbin.set_property("audio-sink", sink);
         }
         let decoders = say.clone();
@@ -91,7 +161,6 @@ impl UrlPlayer {
         Some(Self {
             playbin,
             heard,
-            view,
             say,
         })
     }
@@ -107,30 +176,16 @@ impl UrlPlayer {
             heard.hold.wanted = playing;
             heard.hold.state()
         };
-        let _ = self.playbin.set_state(state);
+        if let Err(error) = self.playbin.set_state(state) {
+            (self.say)(&format!(
+                "[gst_video] ERROR setting playback state to {state:?}: {error}"
+            ));
+        }
     }
 
     pub fn stop(&self) {
         (self.say)("[gst_video] stop, everything it held goes");
         let _ = self.playbin.set_state(gst::State::Null);
-        self.view.remove();
-    }
-
-    pub fn set_visible(&self, visible: bool) {
-        self.view.set_visible(visible);
-    }
-
-    pub fn set_content_region(
-        &self,
-        crop_l: f64,
-        crop_t: f64,
-        vis_w: f64,
-        vis_h: f64,
-        tier_w: f64,
-        tier_h: f64,
-    ) {
-        self.view
-            .set_region(crop_l, crop_t, vis_w, vis_h, tier_w, tier_h);
     }
 
     pub fn set_rate(&self, rate: f64) {
@@ -164,6 +219,10 @@ impl UrlPlayer {
         seek_to(&self.playbin, seconds, &self.say);
     }
 
+    pub fn set_volume(&self, level: f64) {
+        self.playbin.set_property("volume", level.clamp(0.0, 1.0));
+    }
+
     pub fn set_muted(&self, muted: bool) {
         (self.say)(&format!("[gst_video] the phone sets muted {muted}"));
         self.playbin.set_property("mute", muted);
@@ -185,10 +244,9 @@ impl UrlPlayer {
     }
 }
 
-impl Drop for UrlPlayer {
+impl Drop for AudioUrlPlayer {
     fn drop(&mut self) {
         let _ = self.playbin.set_state(gst::State::Null);
-        self.view.remove();
     }
 }
 
@@ -221,7 +279,7 @@ pub(crate) fn video_sink(say: &Say) -> Option<gst::Element> {
         .map(|bin| bin.upcast())
 }
 
-fn audio_sink(device: &str) -> Option<gst::Element> {
+fn audio_sink(device: &str, say: &Say) -> Option<gst::Element> {
     let (element, device_property) = if cfg!(target_os = "macos") {
         ("osxaudiosink", "unique-id")
     } else if cfg!(target_os = "android") {
@@ -229,7 +287,9 @@ fn audio_sink(device: &str) -> Option<gst::Element> {
     } else {
         ("pulsesink", "device")
     };
-    let sink = gst::ElementFactory::make(element).build().ok()?;
+    let sink = gst::ElementFactory::make(element).build().inspect_err(|error| {
+        say(&format!("[gst_video] WARN could not create audio sink {element}, device={device:?}: {error}; using default output"));
+    }).ok()?;
     if !device.is_empty() {
         sink.set_property(device_property, device);
     }
@@ -250,7 +310,10 @@ fn watch_decoder(element: &gst::Element, say: &Say) {
 }
 
 fn watch_bus(playbin: &gst::Element, heard: Arc<Mutex<Heard>>, say: Say) {
-    let Some(bus) = playbin.bus() else { return };
+    let Some(bus) = playbin.bus() else {
+        say("[gst_video] ERROR no playback bus; stream errors cannot be monitored");
+        return;
+    };
     let player = playbin.downgrade();
     let own_name = playbin.name().to_string();
     bus.set_sync_handler(move |_, msg| {
@@ -289,8 +352,11 @@ fn watch_bus(playbin: &gst::Element, heard: Arc<Mutex<Heard>>, say: Say) {
                         "[gst_video] buffered {percent} %, switching to {state:?}"
                     ));
                     if let Some(playbin) = player.upgrade() {
+                        let say = say.clone();
                         playbin.call_async(move |p| {
-                            let _ = p.set_state(state);
+                            if let Err(error) = p.set_state(state) {
+                                say(&format!("[gst_video] ERROR setting buffering state to {state:?}: {error}"));
+                            }
                         });
                     }
                 }
@@ -298,14 +364,14 @@ fn watch_bus(playbin: &gst::Element, heard: Arc<Mutex<Heard>>, say: Say) {
             gst::MessageView::Error(e) => {
                 heard.failed = true;
                 say(&format!(
-                    "[gst_video] ERROR from {src}: {} | {}",
+                    "[gst_video] ERROR from {src}: {:?} | {}",
                     e.error(),
                     e.debug().unwrap_or_default()
                 ));
             }
             gst::MessageView::Warning(w) => {
                 say(&format!(
-                    "[gst_video] WARN from {src}: {} | {}",
+                    "[gst_video] WARN from {src}: {:?} | {}",
                     w.error(),
                     w.debug().unwrap_or_default()
                 ));

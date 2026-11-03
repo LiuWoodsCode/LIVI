@@ -146,6 +146,8 @@ plugins=(
   libgstplayback.dylib
   libgstadaptivedemux2.dylib
   libgstsoup.dylib
+  # ICY/Shoutcast metadata and MP3 internet radio streams.
+  libgsticydemux.dylib
   libgstisomp4.dylib
   libgstmpegtsdemux.dylib
 )

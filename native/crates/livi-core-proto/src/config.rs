@@ -123,6 +123,8 @@ pub struct Config {
     pub dab_gain_auto: bool,
     pub dab_gain_db: f64,
     pub dab_ppm: i32,
+    #[serde(default)]
+    pub internet_radio_draft: crate::state::InternetRadioDraft,
 
     pub auto_conn: bool,
     pub auto_switch_on_reverse: bool,
@@ -521,6 +523,7 @@ pub fn defaults() -> Config {
         dab_gain_auto: true,
         dab_gain_db: 19.7,
         dab_ppm: 0,
+        internet_radio_draft: Default::default(),
         auto_conn: true,
         auto_switch_on_reverse: true,
         start_page: "/".into(),

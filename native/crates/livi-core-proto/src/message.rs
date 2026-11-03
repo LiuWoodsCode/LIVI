@@ -111,6 +111,13 @@ pub enum Action {
     DownloadUpdate,
     InstallUpdate,
     AbortUpdate,
+    InternetRadioSave {
+        draft: crate::state::InternetRadioDraft,
+    },
+    #[serde(rename_all = "camelCase")]
+    InternetRadioDelete {
+        service_id: u32,
+    },
     DabScan,
     DabStopScan,
     #[serde(rename_all = "camelCase")]

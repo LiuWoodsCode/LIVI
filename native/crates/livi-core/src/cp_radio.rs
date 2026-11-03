@@ -40,7 +40,7 @@ fn radio(dab: &Dab) -> Radio {
     let label = tuned.map(|s| s.label.clone()).unwrap_or_default();
     let artwork = tuned.and_then(logo).unwrap_or_default();
     Radio {
-        available: dab.receiver.is_some(),
+        available: dab.receiver.is_some() || stations.iter().any(|s| s.internet.is_some()),
         stations: stations
             .iter()
             .filter(|s| !s.hidden)
@@ -95,6 +95,7 @@ mod tests {
             favorite: false,
             hidden: false,
             logo: None,
+            internet: None,
         }
     }
 

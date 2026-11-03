@@ -78,9 +78,9 @@ fn settings_targets(s: &SettingsState) -> Vec<Target> {
                     RowKind::Item => {
                         out.extend((0..r.tools.row_count()).map(|j| Target::Tool(i, j)))
                     }
-                    RowKind::Device => {
+                    RowKind::Device | RowKind::Button => {
                         if r.enabled {
-                            out.push(Target::Row(i, RowKind::Device));
+                            out.push(Target::Row(i, r.kind));
                         }
                         out.extend((0..r.tools.row_count()).map(|j| Target::Tool(i, j)))
                     }

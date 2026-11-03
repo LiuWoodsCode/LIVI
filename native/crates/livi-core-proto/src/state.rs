@@ -49,6 +49,8 @@ pub struct Dab {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DabStation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub internet: Option<InternetStation>,
     pub service_id: u32,
     pub label: String,
     pub short_label: String,
@@ -61,6 +63,22 @@ pub struct DabStation {
     pub hidden: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub logo: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InternetStation {
+    pub url: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct InternetRadioDraft {
+    pub service_id: Option<u32>,
+    pub name: String,
+    pub url: String,
+    pub description: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]

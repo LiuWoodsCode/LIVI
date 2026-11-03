@@ -57,12 +57,16 @@ struct UrlLog {
     rates: Vec<f64>,
     seeks: Vec<f64>,
     muted: Option<bool>,
+    volume: Option<f64>,
     dropped: bool,
 }
 
 struct FakeUrlPlayer(Rc<RefCell<UrlLog>>);
 
 impl UrlPlay for FakeUrlPlayer {
+    fn set_volume(&self, level: f64) {
+        self.0.borrow_mut().volume = Some(level);
+    }
     fn status(&self) -> UrlStatus {
         self.0.borrow().status
     }
@@ -258,6 +262,11 @@ impl Outside for Fake {
             id: "/dev/video0".into(),
             name: "USB Cam".into(),
         }]);
+    }
+
+    fn play_radio(&self, id: u32, url: &str, audio_device: &str) -> Option<Box<dyn UrlPlay>> {
+        self.play_url(id, url, audio_device)
+            .map(|p| Box::new(p) as Box<dyn UrlPlay>)
     }
 
     fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<FakeUrlPlayer> {
@@ -1843,4 +1852,52 @@ fn a_tap_message_short_of_its_device_opens_nothing() {
     let mut f = Fixture::new();
     f.send(OP_TAP_OPEN, 0x7c01, &[0, 0, 0, 0, 1, 9]);
     assert!(f.world.0.borrow().taps.is_empty());
+}
+
+#[test]
+fn radio_playback_reports_status_obeys_volume_and_stops() {
+    let mut f = Fixture::new();
+    let id = 1234;
+    f.send(
+        OP_RADIO_PLAY,
+        id,
+        &livi_host_proto::url_body("https://radio.example/live", "car-speakers"),
+    );
+    assert_eq!(f.world.0.borrow().urls[0].2, "car-speakers");
+    assert_eq!(url_log(&f, 0).borrow().started, 1);
+    f.send(OP_AUDIO_VOLUME, id, &0.4f64.to_le_bytes());
+    assert_eq!(url_log(&f, 0).borrow().volume, Some(0.4));
+    let status = UrlStatus {
+        playing: true,
+        ready: true,
+        ..Default::default()
+    };
+    url_log(&f, 0).borrow_mut().status = status;
+    f.host.pump_url_status();
+    assert_eq!(
+        f.replies(),
+        vec![(REPLY_URL_STATUS, id, url_status_body(&status))]
+    );
+    f.send(OP_STOP, id, &[]);
+    assert!(url_log(&f, 0).borrow().dropped);
+    assert!(f.host.radio_players.is_empty());
+}
+
+#[test]
+fn a_radio_player_that_cannot_start_reports_failure() {
+    let mut f = Fixture::new();
+    f.world.0.borrow_mut().refuse_url = true;
+    f.send(
+        OP_RADIO_PLAY,
+        1234,
+        &livi_host_proto::url_body("https://radio.example/live", ""),
+    );
+    let replies = f.replies();
+    assert_eq!(replies.len(), 1);
+    assert_eq!(replies[0].0, REPLY_URL_STATUS);
+    assert!(
+        livi_host_proto::parse_url_status(&replies[0].2)
+            .unwrap()
+            .failed
+    );
 }

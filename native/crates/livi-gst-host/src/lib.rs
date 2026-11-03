@@ -90,6 +90,7 @@ pub trait UrlPlay: 'static {
     fn seek(&self, seconds: f64);
     fn set_muted(&self, muted: bool);
     fn status(&self) -> UrlStatus;
+    fn set_volume(&self, _level: f64) {}
 }
 
 pub trait Outside: 'static {
@@ -103,6 +104,10 @@ pub trait Outside: 'static {
     fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<Self::Plane>;
 
     fn play_url(&self, id: u32, url: &str, audio_device: &str) -> Option<Self::UrlPlayer>;
+
+    fn play_radio(&self, _id: u32, _url: &str, _audio_device: &str) -> Option<Box<dyn UrlPlay>> {
+        None
+    }
 
     type Camera;
 
@@ -361,6 +366,7 @@ pub struct Host<O: Outside> {
     uplinks: HashMap<u32, O::Uplink>,
     taps: HashMap<u32, O::Tap>,
     url_players: HashMap<u32, O::UrlPlayer>,
+    radio_players: HashMap<u32, Box<dyn UrlPlay>>,
     cameras: HashMap<u32, O::Camera>,
     cameras_watched: bool,
     feed_fans: FeedFans,
@@ -383,6 +389,7 @@ impl<O: Outside> Host<O> {
             uplinks: HashMap::new(),
             taps: HashMap::new(),
             url_players: HashMap::new(),
+            radio_players: HashMap::new(),
             cameras: HashMap::new(),
             cameras_watched: false,
             feed_fans: Rc::new(RefCell::new(HashMap::new())),
@@ -410,7 +417,11 @@ impl<O: Outside> Host<O> {
                     p.push(rest);
                 }
             }
+            OP_RADIO_PLAY => self.play_radio(id, rest),
             OP_STOP => {
+                if self.radio_players.remove(&id).is_some() {
+                    eprintln!("[internet-radio] host stopped stream={id:#x}");
+                }
                 self.planes.borrow_mut().remove(&id);
                 self.cameras.remove(&id);
                 if self.url_players.remove(&id).is_some() {
@@ -446,6 +457,9 @@ impl<O: Outside> Host<O> {
             OP_SET_ACTIVE => self.set_active_feeder(id, rest),
             OP_AUDIO_OPEN => self.open_audio(id, rest),
             OP_AUDIO_VOLUME => {
+                if let (Some(player), Some(level)) = (self.radio_players.get(&id), f64_le(rest)) {
+                    player.set_volume(level);
+                }
                 if rest.len() >= size_of::<f64>()
                     && let Some(a) = self.audio.borrow_mut().get_mut(&id)
                 {

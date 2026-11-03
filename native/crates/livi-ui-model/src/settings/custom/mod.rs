@@ -9,6 +9,7 @@ mod devices;
 pub mod files;
 mod gps;
 pub mod icon;
+mod internet_radio;
 mod mfi;
 mod system;
 pub mod touch;
@@ -35,6 +36,7 @@ pub enum Watch {
 
 pub fn rows(page: CustomPage, state: &Value, t: &Strings, facts: &Facts) -> Option<Vec<Row>> {
     Some(match page {
+        CustomPage::InternetRadio => internet_radio::rows(state, t),
         CustomPage::DabReceiver => dab::receiver(&dab::dab(state), t),
         CustomPage::DabStations => dab::stations(&dab::dab(state), t),
         CustomPage::About => system::about(t, facts),

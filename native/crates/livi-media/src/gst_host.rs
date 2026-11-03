@@ -11,7 +11,7 @@ use std::time::Duration;
 
 use livi_host_proto::ops::*;
 use livi_host_proto::{Framer, encode_reply as frame};
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
 use tokio::sync::{broadcast, mpsc, oneshot};
 
@@ -261,22 +261,14 @@ impl GstHost {
             use std::os::unix::fs::PermissionsExt;
             let _ = std::fs::set_permissions(&launch.bin, std::fs::Permissions::from_mode(0o755));
         }
-        let (stdout, stderr) = match log_file(&launch.log) {
-            Some(f) => (
-                f.try_clone()
-                    .map(Stdio::from)
-                    .unwrap_or_else(|_| Stdio::inherit()),
-                Stdio::from(f),
-            ),
-            None => (Stdio::inherit(), Stdio::inherit()),
-        };
+        let log = log_file(&launch.log).map(|file| Arc::new(Mutex::new(file)));
         let child = tokio::process::Command::new(&launch.bin)
             .arg(&self.inner.sock_path)
             .arg(&launch.crash)
             .envs(launch.env.iter().map(|(k, v)| (k, v)))
             .stdin(Stdio::null())
-            .stdout(stdout)
-            .stderr(stderr)
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
             .kill_on_drop(true)
             .spawn();
         let mut child = match child {
@@ -289,6 +281,12 @@ impl GstHost {
                 return;
             }
         };
+        if let Some(stdout) = child.stdout.take() {
+            mirror_host_output(stdout, log.clone());
+        }
+        if let Some(stderr) = child.stderr.take() {
+            mirror_host_output(stderr, log);
+        }
         let host = self.clone();
         tokio::spawn(async move {
             let status = child.wait().await;
@@ -660,6 +658,16 @@ impl GstHost {
         ));
     }
 
+    pub fn play_radio(&self, url: &str, audio_device: &str) -> u32 {
+        let id = self.next_id();
+        self.send(frame(
+            OP_RADIO_PLAY,
+            id,
+            &livi_host_proto::url_body(url, audio_device),
+        ));
+        id
+    }
+
     pub fn play_url(&self, plane: u32, url: &str, audio_device: &str) {
         self.send(frame(
             OP_PLAY_URL,
@@ -683,6 +691,39 @@ impl GstHost {
     pub fn stop(&self, plane: u32) {
         self.send(frame(OP_STOP, plane, &[]));
     }
+}
+
+fn mirror_host_output(
+    output: impl AsyncRead + Unpin + Send + 'static,
+    log: Option<Arc<Mutex<std::fs::File>>>,
+) {
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(output);
+        let mut line = Vec::new();
+        loop {
+            line.clear();
+            match reader.read_until(b'\n', &mut line).await {
+                Ok(0) => break,
+                Ok(_) => {
+                    if let Some(log) = &log {
+                        use std::io::Write;
+                        let _ = log
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner())
+                            .write_all(&line);
+                    }
+                    eprintln!(
+                        "[gst-host] {}",
+                        String::from_utf8_lossy(&line).trim_end_matches(['\r', '\n'])
+                    );
+                }
+                Err(error) => {
+                    eprintln!("[core] cannot read gst-host output: {error}");
+                    break;
+                }
+            }
+        }
+    });
 }
 
 fn log_file(path: &std::path::Path) -> Option<std::fs::File> {

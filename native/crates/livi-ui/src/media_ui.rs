@@ -114,7 +114,12 @@ pub fn apply_dab(ui: &AppWindow, v: DabView) {
     let d = v.dab;
     s.set_receiver(d.receiver);
     s.set_active(d.active);
-    s.set_title(d.title.clone().unwrap_or_else(|| "DAB+".into()).into());
+    s.set_title(
+        d.title
+            .clone()
+            .unwrap_or_else(|| ui.global::<MediaText>().get_dab_source().to_string())
+            .into(),
+    );
     s.set_text(d.text.into());
     s.set_ensemble(
         if d.title.is_some() {
@@ -191,7 +196,7 @@ pub fn path(ui: &AppWindow) -> &'static str {
 pub fn set_texts(ui: &AppWindow, tr: impl Fn(&str, &str) -> String) {
     let t = ui.global::<MediaText>();
     t.set_phone_source(tr("media.phoneSource", "Phone").into());
-    t.set_dab_source(tr("media.dabSource", "DAB+").into());
+    t.set_dab_source(tr("settings.radio", "Radio").into());
     t.set_no_stations(tr("media.noStations", "No stations yet").into());
     t.set_no_artwork(tr("media.noArtwork", "No Artwork").into());
 }

@@ -6,16 +6,18 @@ use livi_audio::player::uplink::{SocketTap, Uplink, UplinkConfig as UplinkPipeli
 use livi_audio::player::{Config as AudioPipeline, Player as AudioPipelinePlayer};
 use livi_audio::stream::AudioSink;
 use livi_screen_stream::ScreenSink;
+use livi_video_player::AudioUrlPlayer;
 #[cfg(not(target_os = "macos"))]
 use livi_video_player::{Player, UrlPlayer};
 
+#[cfg(not(target_os = "macos"))]
+use crate::Plane;
+use crate::UrlPlay;
 #[cfg(target_os = "android")]
 use crate::shown::Shown;
 #[cfg(target_os = "macos")]
 use crate::ui_plane::{UiPlane, UiUrlPlayer};
 use crate::{AudioConfig, MediaSink, Outside, Speaker, TapConfig, UplinkConfig};
-#[cfg(not(target_os = "macos"))]
-use crate::{Plane, UrlPlay};
 
 pub struct Tap(#[allow(dead_code)] SocketTap);
 
@@ -38,8 +40,32 @@ impl Plane for Player {
     }
 }
 
+impl UrlPlay for AudioUrlPlayer {
+    fn start(&self) {
+        AudioUrlPlayer::start(self);
+    }
+    fn set_rate(&self, rate: f64) {
+        AudioUrlPlayer::set_rate(self, rate);
+    }
+    fn seek(&self, seconds: f64) {
+        AudioUrlPlayer::seek(self, seconds);
+    }
+    fn set_muted(&self, muted: bool) {
+        AudioUrlPlayer::set_muted(self, muted);
+    }
+    fn set_volume(&self, level: f64) {
+        AudioUrlPlayer::set_volume(self, level);
+    }
+    fn status(&self) -> crate::UrlStatus {
+        AudioUrlPlayer::status(self)
+    }
+}
+
 #[cfg(not(target_os = "macos"))]
 impl UrlPlay for UrlPlayer {
+    fn set_volume(&self, level: f64) {
+        UrlPlayer::set_volume(self, level);
+    }
     fn start(&self) {
         UrlPlayer::start(self)
     }
@@ -138,6 +164,15 @@ impl Outside for Gst {
     #[cfg(target_os = "macos")]
     fn create_plane(&self, id: u32, codec: &str, codec_data: &[u8]) -> Option<UiPlane> {
         UiPlane::open(&ui_planes_path(id)?, id, codec, codec_data)
+    }
+
+    fn play_radio(&self, id: u32, url: &str, audio_device: &str) -> Option<Box<dyn UrlPlay>> {
+        let stderr = livi_video_player::to_stderr();
+        let say: livi_video_player::Say = std::sync::Arc::new(move |message| {
+            let message = message.strip_prefix("[gst_video] ").unwrap_or(message);
+            stderr(&format!("[internet-radio] stream={id:#x}: {message}"));
+        });
+        AudioUrlPlayer::new(url, audio_device, say).map(|p| Box::new(p) as Box<dyn UrlPlay>)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "android")))]

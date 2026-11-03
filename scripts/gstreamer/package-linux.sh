@@ -333,6 +333,8 @@ plugins=(
   libgstplayback.so
   libgstadaptivedemux2.so
   libgstsoup.so
+  # ICY/Shoutcast metadata and MP3 internet radio streams.
+  libgsticydemux.so
   libgstisomp4.so
   libgstmpegtsdemux.so
 )

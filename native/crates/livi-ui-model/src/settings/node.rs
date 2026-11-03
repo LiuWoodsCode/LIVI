@@ -108,6 +108,7 @@ pub enum CustomPage {
     ContrastGammaCalibration,
     DabReceiver,
     DabStations,
+    InternetRadio,
     DashboardLayouts,
     GpsHwInfo,
     GpsInfo,

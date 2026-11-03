@@ -182,6 +182,47 @@ impl Core {
                 crate::mfi::remove(&self.mfi_dir, file)?;
                 self.refresh_mfi().await
             }
+            Action::InternetRadioSave { draft } => {
+                crate::internet_radio::validate(&draft).inspect_err(|error| {
+                    eprintln!(
+                        "[internet-radio] ERROR validating station {:?}, id={:?}: {error}",
+                        draft.name, draft.service_id
+                    );
+                })?;
+                if let Some(id) = draft.service_id {
+                    if !self
+                        .hub
+                        .watch()
+                        .borrow()
+                        .dab
+                        .stations
+                        .iter()
+                        .any(|s| s.service_id == id && s.internet.is_some())
+                    {
+                        eprintln!(
+                            "[internet-radio] ERROR saving station id={id:#x}: station no longer exists"
+                        );
+                        return Err("Internet radio station no longer exists".into());
+                    }
+                }
+                self.ask_dab(DabAsk::SaveInternet(draft))
+                    .inspect_err(|error| {
+                        eprintln!("[internet-radio] ERROR submitting station save: {error}");
+                    })?;
+                self.set_config(&serde_json::json!({ "internetRadioDraft": livi_core_proto::state::InternetRadioDraft::default() })).await
+            }
+            Action::InternetRadioDelete { service_id } => {
+                self.ask_dab(DabAsk::DeleteInternet(service_id))
+                    .inspect_err(|error| {
+                        eprintln!(
+                            "[internet-radio] ERROR deleting station id={service_id:#x}: {error}"
+                        );
+                    })?;
+                if self.hub.config().internet_radio_draft.service_id == Some(service_id) {
+                    self.set_config(&serde_json::json!({ "internetRadioDraft": livi_core_proto::state::InternetRadioDraft::default() })).await?;
+                }
+                Ok(())
+            }
             Action::DabScan => self.ask_dab(DabAsk::Scan),
             Action::DabStopScan => self.ask_dab(DabAsk::StopScan),
             Action::DabPlay { service_id } => self.ask_dab(DabAsk::Play(service_id)),

@@ -39,7 +39,7 @@ pub(super) fn logo(b64: &str) -> Option<Image> {
 pub fn focus_stops(r: &Row) -> usize {
     match r.kind {
         ModelRowKind::Item => r.tools.len(),
-        ModelRowKind::Device => usize::from(r.enabled) + r.tools.len(),
+        ModelRowKind::Device | ModelRowKind::Button => usize::from(r.enabled) + r.tools.len(),
         _ if r.focusable() => 1,
         _ => 0,
     }
@@ -93,7 +93,7 @@ pub(super) fn row_data(r: &Row, focus_at: i32) -> RowData {
         alert: r.alert,
         tool_offset: match r.kind {
             ModelRowKind::Item => 0,
-            ModelRowKind::Device => i32::from(r.enabled),
+            ModelRowKind::Device | ModelRowKind::Button => i32::from(r.enabled),
             _ => -1,
         },
         icon_active: dev.is_some_and(|d| d.presence == Presence::Active),
@@ -134,6 +134,7 @@ pub(super) fn custom_name(page: CustomPage) -> &'static str {
         CustomPage::ContrastGammaCalibration => "Contrast / Gamma",
         CustomPage::DabReceiver => "DAB receiver",
         CustomPage::DabStations => "DAB stations",
+        CustomPage::InternetRadio => "Internet radio",
         CustomPage::DashboardLayouts => "Dashboard layouts",
         CustomPage::GpsHwInfo => "GPS hardware",
         CustomPage::GpsInfo => "GPS info",
