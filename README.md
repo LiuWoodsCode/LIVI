@@ -25,6 +25,8 @@ It is a standalone cross-platform head unit with a native, zero-copy GStreamer v
 
 LIVI implements the CarPlay accessory side natively, wired and wireless, on Linux and on macOS. Wireless sessions run over LIVI's own Wi-Fi access point with Bluetooth pairing, wired sessions run directly over the USB cable (no OTG required).
 
+Wired CarPlay requires the phone's `com.apple.carkit.service` lockdown service. A phone returning `InvalidService` cannot use LIVI's current wired transport; this has been reported on iOS 12.5.5. On macOS, unlock the phone and complete pairing in Finder first. LIVI retries while waiting for the Mac's pairing record.
+
 - main and instrument cluster video (H.264 and H.265/HEVC, hardware decoded, zero-copy)
 - configurable cluster content: map or maneuver card, compass, ETA, speed limit
 - audio playback, phone calls, microphone uplink, Siri

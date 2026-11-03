@@ -151,11 +151,30 @@ pub async fn watch_usbmuxd(
     use std::collections::HashSet;
 
     let mut active: HashMap<String, Arc<Notify>> = HashMap::new();
+    let mut last_errors = HashMap::new();
+    let (finished, mut failures) = tokio::sync::mpsc::unbounded_channel::<(
+        String,
+        Arc<Notify>,
+        iap2_wired::usbmuxd::ProbeError,
+    )>();
 
     loop {
         tokio::select! {
             _ = tokio::time::sleep(SCAN_INTERVAL) => {}
             _ = link.changed().notified() => {}
+            Some((udid, cancel, error)) = failures.recv() => {
+                // Ignore results from a connection that has already been unplugged/replaced.
+                if active.get(&udid).is_some_and(|current| Arc::ptr_eq(current, &cancel)) {
+                    if last_errors.get(&udid) != Some(&error) {
+                        eprintln!("[wired] {}: usbmuxd carkit failed: {error}", short(&udid));
+                    }
+                    if error.waiting_for_pairing() {
+                        active.remove(&udid);
+                    }
+                    last_errors.insert(udid, error);
+                }
+                continue;
+            }
         }
 
         let devices = match iap2_wired::usbmuxd::devices().await {
@@ -163,6 +182,7 @@ pub async fn watch_usbmuxd(
             Err(_) => continue,
         };
         let present: HashSet<String> = devices.iter().map(|d| d.udid.clone()).collect();
+        last_errors.retain(|udid, _| present.contains(udid));
         active.retain(|udid, cancel| {
             if state.take_redo(udid) {
                 return false;
@@ -196,6 +216,7 @@ pub async fn watch_usbmuxd(
                 link: link.clone(),
             };
             ctx.cp.av_iface_late = Some(late);
+            let finished = finished.clone();
             tokio::spawn(async move {
                 match iap2_wired::usbmuxd::open(&device).await {
                     Ok(stream) => {
@@ -209,10 +230,7 @@ pub async fn watch_usbmuxd(
                         finder.abort();
                     }
                     Err(e) => {
-                        eprintln!(
-                            "[wired] {}: usbmuxd carkit failed: {e}",
-                            short(&device.udid)
-                        )
+                        let _ = finished.send((device.udid, cancel, e));
                     }
                 }
             });

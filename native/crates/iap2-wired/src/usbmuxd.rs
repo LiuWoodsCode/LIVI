@@ -33,6 +33,12 @@ pub struct ProbeError {
     pub detail: String,
 }
 
+impl ProbeError {
+    pub fn waiting_for_pairing(&self) -> bool {
+        self.stage == Stage::PairRecord && self.detail.contains("missing PairRecordData")
+    }
+}
+
 impl std::fmt::Display for ProbeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{:?}: {}", self.stage, self.detail)
@@ -118,9 +124,18 @@ async fn open_provider(
             detail: "USB device is not an iPhone".into(),
         });
     }
-    let pairing = step(Stage::PairRecord, provider.get_pairing_file()).await?;
+    let pairing = step(Stage::PairRecord, provider.get_pairing_file())
+        .await
+        .map_err(|mut error| {
+            if error.waiting_for_pairing() {
+                error.detail.push_str(
+                    "; unlock the iPhone and trust this Mac in Finder; waiting for the Mac's pairing record",
+                );
+            }
+            error
+        })?;
     step(Stage::Session, lockdown.start_session(&pairing)).await?;
-    let (port, ssl) = step(Stage::Carkit, lockdown.start_service(LOCKDOWN_SERVICE)).await?;
+    let (port, ssl) = start_carkit(&mut lockdown).await?;
     let mut channel = step(Stage::Carkit, provider.connect(port)).await?;
     if ssl {
         step(Stage::CarkitTls, channel.start_session(&pairing, false)).await?;
@@ -134,6 +149,28 @@ async fn open_provider(
     } else {
         socket
     })
+}
+
+async fn start_carkit(lockdown: &mut LockdownClient) -> Result<(u16, bool), ProbeError> {
+    match step(Stage::Carkit, lockdown.start_service(LOCKDOWN_SERVICE)).await {
+        Ok(service) => Ok(service),
+        Err(mut error) => {
+            if error.detail.contains("`InvalidService`") {
+                let version = step(
+                    Stage::Product,
+                    lockdown.get_value(Some("ProductVersion"), None),
+                )
+                .await
+                .ok()
+                .and_then(|value| value.into_string())
+                .unwrap_or_else(|| "unknown".into());
+                error.detail = format!(
+                    "{LOCKDOWN_SERVICE} is unavailable on this device (iOS {version}, InvalidService)"
+                );
+            }
+            Err(error)
+        }
+    }
 }
 
 #[cfg(test)]
