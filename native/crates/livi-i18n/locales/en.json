@@ -7,6 +7,7 @@
     "settingsTitle": "Settings",
     "devices": "Devices",
     "general": "General",
+    "radio": "Radio",
     "screenSettings": "Screen Settings",
     "tabSettings": "Tab Settings",
     "mainVideo": "Main Video",
@@ -348,7 +349,7 @@
     "dabSource": "DAB+",
     "stationList": "Station list",
     "favorite": "Favorite",
-    "noStations": "No stations yet, scan under Settings > General > DAB+",
+    "noStations": "No stations yet, scan under Settings > Radio > DAB+",
     "hideStation": "Hide station",
     "showStation": "Show station",
     "noArtwork": "No Artwork"

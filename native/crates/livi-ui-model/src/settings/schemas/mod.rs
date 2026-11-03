@@ -8,5 +8,6 @@ pub mod car;
 pub mod dab;
 pub mod devices;
 pub mod general;
+pub mod radio;
 pub mod system;
 pub mod video;

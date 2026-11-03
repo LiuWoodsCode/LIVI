@@ -7,6 +7,7 @@
     "settingsTitle": "Réglages",
     "devices": "Appareils",
     "general": "Général",
+    "radio": "Radio",
     "screenSettings": "Réglages Écrans",
     "tabSettings": "Réglages Onglets",
     "mainVideo": "Affichage Principal",
@@ -348,7 +349,7 @@
     "dabSource": "DAB+",
     "stationList": "Liste des stations",
     "favorite": "Favori",
-    "noStations": "Aucune station, lancez la recherche dans Réglages > Général > DAB+",
+    "noStations": "Aucune station, lancez la recherche dans Réglages > Radio > DAB+",
     "hideStation": "Masquer la station",
     "showStation": "Afficher la station",
     "noArtwork": "Pas de pochette"

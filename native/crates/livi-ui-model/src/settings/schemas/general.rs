@@ -703,7 +703,6 @@ pub fn schema() -> Node {
             .display_value()
             .page(Label::new("settings.language", "Language")),
             mfi(),
-            crate::settings::schemas::dab::schema(),
             gps(),
         ],
     )

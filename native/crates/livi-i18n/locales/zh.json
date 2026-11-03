@@ -7,6 +7,7 @@
     "settingsTitle": "设置",
     "devices": "设备",
     "general": "通用",
+    "radio": "广播",
     "screenSettings": "屏幕设置",
     "tabSettings": "标签页设置",
     "mainVideo": "主视频",
@@ -348,7 +349,7 @@
     "dabSource": "DAB+",
     "stationList": "电台列表",
     "favorite": "收藏",
-    "noStations": "暂无电台，请在 设置 > 通用 > DAB+ 中扫描",
+    "noStations": "暂无电台，请在 设置 > 广播 > DAB+ 中扫描",
     "hideStation": "隐藏电台",
     "showStation": "显示电台",
     "noArtwork": "暂无封面"

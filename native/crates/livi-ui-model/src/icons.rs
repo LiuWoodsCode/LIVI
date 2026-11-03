@@ -56,6 +56,7 @@ const SETTINGS: &[(&str, &str)] = &[
     ("general", "TuneOutlined"),
     ("car", "DirectionsCarOutlined"),
     ("audio", "VolumeUpOutlined"),
+    ("radio", "RadioOutlined"),
     ("video", "MonitorOutlined"),
     ("appearance", "ContrastOutlined"),
     ("system", "MemoryOutlined"),

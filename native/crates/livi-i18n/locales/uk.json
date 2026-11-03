@@ -7,6 +7,7 @@
     "settingsTitle": "Налаштування",
     "devices": "Пристрої",
     "general": "Загальні",
+    "radio": "Радіо",
     "screenSettings": "Налаштування екранів",
     "tabSettings": "Налаштування вкладок",
     "mainVideo": "Основне відео",
@@ -348,7 +349,7 @@
     "dabSource": "DAB+",
     "stationList": "Список станцій",
     "favorite": "Обране",
-    "noStations": "Станцій ще немає, шукайте в Налаштування > Загальні > DAB+",
+    "noStations": "Станцій ще немає, шукайте в Налаштування > Радіо > DAB+",
     "hideStation": "Приховати станцію",
     "showStation": "Показати станцію",
     "noArtwork": "Немає обкладинки"

@@ -83,7 +83,7 @@ pub fn stations(d: &Dab, t: &Strings) -> Vec<Row> {
         return vec![info(
             t.t(
                 "media.noStations",
-                "No stations yet, scan under Settings > General > DAB+",
+                "No stations yet, scan under Settings > Radio > DAB+",
             ),
             None,
             String::new(),

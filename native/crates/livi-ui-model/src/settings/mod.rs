@@ -36,6 +36,7 @@ pub fn schema() -> Node {
             schemas::general::schema(),
             schemas::car::schema(),
             schemas::audio::schema(),
+            schemas::radio::schema(),
             schemas::video::schema(),
             schemas::appearance::schema(),
             schemas::system::schema(),
